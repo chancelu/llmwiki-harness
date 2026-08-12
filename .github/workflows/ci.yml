@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 jobs:
   test:
@@ -31,9 +31,9 @@ jobs:
         run: pytest tests/ -v
 
       - name: Check formatting (black)
-        run: black --check hermes_llmwiki/ tests/
+        run: black --check llmwiki/ tests/
         if: matrix.os == 'ubuntu-latest'
 
       - name: Lint (ruff)
-        run: ruff check hermes_llmwiki/ tests/
+        run: ruff check llmwiki/ tests/
         if: matrix.os == 'ubuntu-latest'
