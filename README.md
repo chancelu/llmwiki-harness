@@ -4,6 +4,8 @@
 >
 > A zero-dependency framework that turns your local Markdown vault (Obsidian, selfwiki, etc.) into long-term memory for any AI agent.
 
+> PyPI note: the distribution is published as **`llmwiki-harness`** (`pip install llmwiki-harness`). The bare `llmwiki` name on PyPI belongs to an unrelated third-party project — do not `pip install llmwiki`. The Python import package and CLI are still called `llmwiki`.
+
 ## What This Is
 
 Every serious agent user hits the same wall: the agent forgets everything between sessions. LLMWiki solves this by treating:
@@ -48,13 +50,13 @@ It provides a universal **harness** that any agent framework can plug into — n
 
 ```bash
 # Core (zero dependencies)
-pip install llmwiki
+pip install llmwiki-harness
 
 # With semantic search support
-pip install llmwiki[semantic]
+pip install llmwiki-harness[semantic]
 
 # Dev
-pip install llmwiki[dev]
+pip install llmwiki-harness[dev]
 ```
 
 ## Quick Start
@@ -207,6 +209,10 @@ Turn End → Capture → chronicle/daily/YYYY-MM-DD.md
 │ ↑ on_session_end / on_pre_compress      │
 └─────────────────────────────────────────┘
 ```
+
+## Ecosystem
+
+- **TypeScript port for DeepSeek Harness**: [`dsh-llmwiki`](https://github.com/chancelu/dsh-llmwiki) — same vault format, native dsh plugin, on npm.
 
 ## From hermes-llmwiki
 
