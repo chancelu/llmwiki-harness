@@ -1,7 +1,7 @@
 """MCP server for LLMWiki — expose the wiki as memory tools for any MCP host.
 
-Works with Claude Desktop, Claude Code, Cursor, Codex, and any other
-MCP-compatible client. Transport is stdio (the MCP default for local servers).
+Works with any MCP-compatible client (Claude Desktop, Cursor, Codex, ...).
+Transport is stdio (the MCP default for local servers).
 
 Run it via the CLI:
 
@@ -19,17 +19,28 @@ Tools exposed to the host:
   - memory_curate()                    → chronicle → compiled wiki notes
   - memory_stats()                     → vault/index/cache statistics
 
+Prompts exposed to the host:
+  - memory-protocol                    → host-side behavior template: when to
+                                         recall, capture, and curate
+
+`memory_curate` uses the host's own LLM via MCP **sampling** when the client
+supports it (zero configuration — no API key or endpoint needed). Fallback
+chain: sampling → LLMWIKI_LLM_ENDPOINT → regex extraction.
+
 The plain tool functions in this module work without the `mcp` package
 installed; only `create_server()`/`main()` require the `mcp` extra.
+
+Note: this module deliberately avoids `from __future__ import annotations`
+so the `ctx: Context` tool annotation survives introspection by the SDK.
 """
 
-from __future__ import annotations
-
+import asyncio
 import json
 import logging
 import sys
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
+from llmwiki import __version__
 from llmwiki.core.config import load_config
 from llmwiki.core.harness import ContextMemoryHarness
 
@@ -52,6 +63,39 @@ def set_harness(harness: ContextMemoryHarness) -> None:
     """Inject a preconfigured harness (used by the CLI and tests)."""
     global _harness
     _harness = harness
+
+
+# ---------------------------------------------------------------------------
+# Memory protocol prompt (exposed as an MCP prompt)
+# ---------------------------------------------------------------------------
+
+_MEMORY_PROTOCOL = """You are connected to LLMWiki, the user's persistent local memory wiki.
+Follow this protocol to make the memory layer actually work:
+
+BEFORE answering:
+- If the user's message might relate to anything from past sessions —
+  projects, people, preferences, decisions, earlier problems — call
+  memory_recall(query=<the user's message>) first and weave the returned
+  context into your answer. When in doubt, recall.
+- Use memory_search when you need raw ranked notes rather than an
+  assembled context block.
+
+AFTER answering:
+- If the exchange produced durable knowledge — a decision, a new fact about
+  the user, project state changes, a solution to a problem — call
+  memory_capture with a faithful summary of both sides. Skip small talk and
+  one-off lookups. When in doubt, capture.
+
+PERIODICALLY:
+- After a long working session, or when the user asks to consolidate, call
+  memory_curate to distill the raw chronicle into atomic wiki notes.
+
+RULES:
+- Memory only helps if you use it: recall first, capture after.
+- Never fabricate memories. If recall returns empty, say you have no prior
+  notes on the topic.
+- The vault is the user's plain-Markdown data. Write only through the
+  provided tools; never modify vault files directly."""
 
 
 # ---------------------------------------------------------------------------
@@ -121,8 +165,9 @@ def memory_curate() -> str:
     """Run the curation pipeline: distill recent chronicle notes into
     compiled atomic wiki notes (entities, concepts, projects).
 
-    Uses LLM-driven extraction when LLMWIKI_LLM_ENDPOINT is configured,
-    otherwise falls back to regex-based extraction.
+    When the MCP client supports sampling, the host's own LLM performs the
+    extraction (zero configuration). Otherwise falls back to the endpoint
+    configured via LLMWIKI_LLM_ENDPOINT, then to regex-based extraction.
 
     Returns:
         JSON summary with processed/created/archived counts.
@@ -153,6 +198,75 @@ _TOOLS = [memory_search, memory_recall, memory_capture, memory_curate, memory_st
 
 
 # ---------------------------------------------------------------------------
+# Sampling bridge (host LLM → sync curation callback)
+# ---------------------------------------------------------------------------
+
+
+def _make_sampling_generate(ctx: Any, loop: asyncio.AbstractEventLoop) -> Optional[Callable]:
+    """Build a sync llm_generate callback backed by MCP sampling.
+
+    The curation engine is synchronous and calls ``llm_generate(prompt)`` per
+    note. Sampling is async and must run on the server's event loop, so we
+    bridge with ``run_coroutine_threadsafe`` while the curation itself runs
+    in an executor thread (the event loop stays free to process the client's
+    sampling responses — no deadlock).
+
+    Returns None when the client does not support sampling (probed with one
+    cheap round-trip), so callers can fall back to the next LLM source.
+    """
+
+    async def _sample(prompt: str) -> str:
+        from mcp import types
+
+        result = await ctx.session.create_message(
+            messages=[
+                types.SamplingMessage(
+                    role="user",
+                    content=types.TextContent(type="text", text=prompt),
+                )
+            ],
+            max_tokens=2000,
+            temperature=0.2,
+        )
+        content = result.content
+        return getattr(content, "text", str(content))
+
+    def generate(prompt: str) -> str:
+        future = asyncio.run_coroutine_threadsafe(_sample(prompt), loop)
+        return future.result(timeout=180)
+
+    # Probe once with a tiny request — clients without sampling support
+    # raise here (method not found / capability missing).
+    try:
+        generate("Reply with exactly: OK")
+    except Exception as e:
+        logger.info("MCP sampling unavailable (%s); curation falls back", e)
+        return None
+    return generate
+
+
+async def _curate_via_sampling(ctx: Any) -> str:
+    """memory_curate variant that prefers the host's LLM via sampling."""
+    harness = _get_harness()
+    loop = asyncio.get_running_loop()
+
+    # The probe and all sampling calls must happen OFF the event-loop thread:
+    # they bridge back onto the loop via run_coroutine_threadsafe, which would
+    # deadlock if the loop thread itself were the one blocking on the result.
+    llm_generate = await loop.run_in_executor(None, _make_sampling_generate, ctx, loop)
+    if llm_generate is None:
+        try:
+            from llmwiki.cli import _make_llm_generate
+
+            llm_generate = _make_llm_generate()
+        except Exception as e:  # pragma: no cover - defensive
+            logger.debug("LLM callback unavailable: %s", e)
+
+    stats = await loop.run_in_executor(None, lambda: harness.curate(llm_generate=llm_generate))
+    return json.dumps(stats, ensure_ascii=False, indent=2)
+
+
+# ---------------------------------------------------------------------------
 # Server wiring (requires the `mcp` package)
 # ---------------------------------------------------------------------------
 
@@ -165,9 +279,11 @@ def create_server():
     try:
         try:
             # mcp 1.x
+            from mcp.server.fastmcp import Context as _Context
             from mcp.server.fastmcp import FastMCP as _Server
         except ImportError:
             # mcp 2.x renamed FastMCP to MCPServer
+            from mcp.server.mcpserver import Context as _Context
             from mcp.server.mcpserver import MCPServer as _Server
     except ImportError as e:
         raise RuntimeError(
@@ -177,17 +293,42 @@ def create_server():
 
     server = _Server(
         "llmwiki",
+        version=__version__,
         instructions=(
             "LLMWiki long-term memory: a local Markdown wiki acting as the "
             "agent's persistent disk. Use memory_recall/memory_search before "
             "answering to retrieve prior knowledge, memory_capture after "
             "meaningful turns to store new knowledge, and memory_curate "
-            "periodically to distill the chronicle into atomic notes."
+            "periodically to distill the chronicle into atomic notes. Load "
+            "the 'memory-protocol' prompt for the full operating protocol."
         ),
     )
 
     for tool_fn in _TOOLS:
+        if tool_fn.__name__ == "memory_curate":
+            continue  # registered below with sampling support
         server.tool()(tool_fn)
+
+    @server.tool()
+    async def memory_curate(ctx: _Context) -> str:  # noqa: F811
+        """Run the curation pipeline: distill recent chronicle notes into
+        compiled atomic wiki notes (entities, concepts, projects).
+
+        Uses your own model via MCP sampling when available (zero
+        configuration); otherwise falls back to a configured LLM endpoint,
+        then regex-based extraction.
+
+        Returns:
+            JSON summary with processed/created/archived counts.
+        """
+        return await _curate_via_sampling(ctx)
+
+    @server.prompt(
+        name="memory-protocol",
+        description="How to use LLMWiki memory: when to recall, capture, and curate",
+    )
+    def memory_protocol() -> str:
+        return _MEMORY_PROTOCOL
 
     return server
 
