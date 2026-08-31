@@ -107,8 +107,10 @@ Five memory tools:
 | `memory_search(query, top_k)` | Raw ranked search over the wiki |
 | `memory_recall(query, token_budget)` | Assembled context block, ready to inject into a prompt |
 | `memory_capture(user_message, assistant_message)` | Store a conversation turn in the chronicle |
-| `memory_curate()` | Distill the chronicle into compiled atomic notes |
+| `memory_curate()` | Distill the chronicle into compiled atomic notes — uses **your host's own LLM via MCP sampling** when available (no API key or endpoint to configure), falling back to a configured endpoint, then regex |
 | `memory_stats()` | Vault / index / cache statistics |
+
+Plus one MCP **prompt**: `memory-protocol` — a host-loadable behavior template that tells the agent when to recall (before answering), when to capture (after meaningful exchanges), and when to curate. Load it in your host to make the memory loop self-sustaining.
 
 ## Features
 
@@ -257,6 +259,13 @@ development.
 
 - **TypeScript port for DeepSeek Harness**: [`dsh-llmwiki`](https://github.com/chancelu/dsh-llmwiki) — same vault format, native dsh plugin, on npm.
 
+## What's New in 0.4.0
+
+- **Zero-config LLM curation via MCP sampling** — `memory_curate` now asks the *host's own model* to distill the chronicle (no API key, no endpoint, nothing to configure). Fallback chain: sampling → `LLMWIKI_LLM_ENDPOINT` → regex.
+- **`memory-protocol` MCP prompt** — a host-loadable operating protocol telling the agent when to recall, capture, and curate, so the memory loop sustains itself instead of depending on the host guessing.
+- **First-run auto-init** — pointing the server at an empty directory now creates the full vault skeleton (including `SCHEMA.md`) automatically.
+- **Polish** — serverInfo now reports the real package version; temporal snippets no longer leak the `# Daily Chronicle:` header line.
+
 ## What's New in 0.3.0
 
 - **MCP server** — `llmwiki mcp` / `llmwiki-mcp` exposes five memory tools (`memory_search`, `memory_recall`, `memory_capture`, `memory_curate`, `memory_stats`) to any MCP-compatible host. Compatible with both mcp 1.x (`FastMCP`) and 2.x (`MCPServer`).
@@ -283,7 +292,7 @@ git clone https://github.com/chancelu/llmwiki-harness
 cd llmwiki-harness
 pip install -e ".[dev,mcp]"
 
-pytest tests/          # 65 tests
+pytest tests/          # 68 tests
 black llmwiki/ tests/  # formatting (line-length 100)
 ruff check llmwiki/ tests/
 ```
