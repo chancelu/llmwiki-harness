@@ -261,32 +261,39 @@ class TestIndexer:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture
+def harness(temp_vault):
+    """Harness over the temp vault; closes DB connections on teardown.
+
+    Required on Windows, where open SQLite connections lock the .db files
+    and break temporary-directory cleanup.
+    """
+    h = ContextMemoryHarness(str(temp_vault))
+    yield h
+    h.close()
+
+
 class TestHarness:
-    def test_initialization(self, temp_vault):
-        harness = ContextMemoryHarness(str(temp_vault))
+    def test_initialization(self, harness, temp_vault):
         assert harness.vault_path == temp_vault
 
-    def test_retrieve_and_assemble(self, temp_vault, sample_entity):
-        harness = ContextMemoryHarness(str(temp_vault))
+    def test_retrieve_and_assemble(self, harness, sample_entity):
         harness.build_index()
         context = harness.retrieve_and_assemble("artificial intelligence", token_budget=2000)
         assert isinstance(context, str)
 
-    def test_capture_turn(self, temp_vault):
-        harness = ContextMemoryHarness(str(temp_vault))
+    def test_capture_turn(self, harness, temp_vault):
         harness.capture_turn("Hello", "Hi!")
         daily_dir = temp_vault / "chronicle" / "daily"
         files = list(daily_dir.glob("*.md"))
         assert len(files) == 1
 
-    def test_stats(self, temp_vault, sample_entity):
-        harness = ContextMemoryHarness(str(temp_vault))
+    def test_stats(self, harness, sample_entity):
         stats = harness.stats()
         assert "vault_path" in stats
         assert stats["vault"]["compiled"].get("entities", 0) >= 1
 
-    def test_cache_works(self, temp_vault, sample_entity):
-        harness = ContextMemoryHarness(str(temp_vault))
+    def test_cache_works(self, harness, sample_entity):
         harness.build_index()
         # Use a query that matches the sample content
         ctx1 = harness.retrieve_and_assemble("artificial intelligence test")
