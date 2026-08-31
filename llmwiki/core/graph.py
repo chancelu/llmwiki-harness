@@ -85,7 +85,7 @@ class LinkGraph:
             if rel.name == "SCHEMA.md" and rel.parent == Path("."):
                 continue
             try:
-                files[str(rel)] = md.stat().st_mtime
+                files[rel.as_posix()] = md.stat().st_mtime
             except OSError:
                 continue
         return files

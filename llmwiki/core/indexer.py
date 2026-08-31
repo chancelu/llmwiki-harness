@@ -157,7 +157,7 @@ class IndexRegistry:
             for md_file in root.rglob("*.md"):
                 try:
                     mtime = md_file.stat().st_mtime
-                    rel = str(md_file.relative_to(self.vault_path))
+                    rel = md_file.relative_to(self.vault_path).as_posix()
                     last = self._index_state.get(rel, 0)
                     if mtime > last:
                         changed.append(md_file)
@@ -187,7 +187,7 @@ class IndexRegistry:
                 continue
             for md_file in root.rglob("*.md"):
                 try:
-                    rel = str(md_file.relative_to(self.vault_path))
+                    rel = md_file.relative_to(self.vault_path).as_posix()
                     self._index_state[rel] = md_file.stat().st_mtime
                 except OSError:
                     continue
