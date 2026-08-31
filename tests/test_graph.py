@@ -104,9 +104,9 @@ def test_neighborhood_weights(graph, vault):
     graph.rebuild()
 
     hood = graph.neighborhood("entities/seed.md", hops=2)
-    assert hood["concepts/hop1.md"] == 1.0   # forward hop-1
-    assert hood["concepts/hop2.md"] == 0.5   # forward hop-2
-    assert hood["concepts/ref.md"] == 0.8    # backlink
+    assert hood["concepts/hop1.md"] == 1.0  # forward hop-1
+    assert hood["concepts/hop2.md"] == 0.5  # forward hop-2
+    assert hood["concepts/ref.md"] == 0.8  # backlink
     assert "entities/seed.md" not in hood
 
 
@@ -124,6 +124,7 @@ def test_incremental_new_file(graph, vault):
     # ensure mtime actually changes on filesystems with coarse granularity
     time.sleep(0.01)
     import os
+
     os.utime(vault / "entities" / "a.md")
 
     assert graph.update_incremental() >= 1
