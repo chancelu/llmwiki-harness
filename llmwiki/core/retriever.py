@@ -253,6 +253,8 @@ class Retriever:
             start = max(0, idx - 200)
             end = min(len(text), idx + 300)
             snippet = text[start:end].replace("\n", " ").strip()
+            # Drop the "# Daily Chronicle: <date>" header when it leaks in
+            snippet = re.sub(r"^# Daily Chronicle:\s*\S+\s*", "", snippet).strip()
 
             results.append(
                 {
