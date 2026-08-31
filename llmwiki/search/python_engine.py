@@ -64,7 +64,7 @@ class PythonEngine(SearchEngine):
                     if len(snippets) >= 3:
                         break
 
-                rel_path = str(md_file.relative_to(vault_path))
+                rel_path = md_file.relative_to(vault_path).as_posix()
                 results.append(
                     SearchResult(
                         path=rel_path,

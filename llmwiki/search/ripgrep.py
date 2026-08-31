@@ -123,7 +123,7 @@ def _parse_ripgrep_output(
 def _make_relative(file_path: str, vault_path: Path) -> str:
     """Make path relative to vault root if possible."""
     try:
-        return str(Path(file_path).relative_to(vault_path))
+        return str(Path(file_path).relative_to(vault_path).as_posix())
     except ValueError:
         return file_path
 
