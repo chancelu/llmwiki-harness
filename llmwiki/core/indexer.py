@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -93,9 +92,7 @@ class IndexRegistry:
             if engine_name not in self.engines:
                 raise ValueError(f"Engine not registered: {engine_name}")
             engine = self.engines[engine_name]
-            results = engine.search(
-                query, self.vault_path, self.schema_dirs, top_k, context_lines
-            )
+            results = engine.search(query, self.vault_path, self.schema_dirs, top_k, context_lines)
         else:
             # Search with all engines and merge
             all_results = []
@@ -195,6 +192,4 @@ class IndexRegistry:
                 except OSError:
                     continue
 
-        self._state_path.write_text(
-            json.dumps(self._index_state, indent=2), encoding="utf-8"
-        )
+        self._state_path.write_text(json.dumps(self._index_state, indent=2), encoding="utf-8")
