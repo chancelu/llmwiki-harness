@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import tempfile
 from pathlib import Path
@@ -333,7 +334,7 @@ academic and knowledge management contexts today.
 """
         atomic_write_text(note, content)
 
-        config = dict(DEFAULT_CONFIG)
+        config = copy.deepcopy(DEFAULT_CONFIG)
         config["vault"]["path"] = str(temp_vault)
         config["curate"]["llm_driven"] = False
 
@@ -353,7 +354,7 @@ academic and knowledge management contexts today.
         note = daily_dir / "2026-08-07.md"
         atomic_write_text(note, "Some conversation about blockchain.")
 
-        config = dict(DEFAULT_CONFIG)
+        config = copy.deepcopy(DEFAULT_CONFIG)
         config["vault"]["path"] = str(temp_vault)
         config["curate"]["llm_driven"] = True
 
@@ -361,3 +362,36 @@ academic and knowledge management contexts today.
         stats = engine.run(llm_generate=mock_llm)
         assert stats["status"] == "ok"
         assert stats["llm_mode"] is True
+
+    def test_short_notes_are_processed(self, temp_vault):
+        """A single captured turn (~100-200 chars) must not be silently skipped."""
+        daily_dir = temp_vault / "chronicle" / "daily"
+        note = daily_dir / "2026-08-07.md"
+        # ~120 chars — under the old 200-char threshold, over the new default
+        atomic_write_text(
+            note,
+            "# Daily Chronicle: 2026-08-07\n\n### Entity: Solana\n"
+            "Solana is a high-throughput blockchain using proof-of-history.\n",
+        )
+
+        config = copy.deepcopy(DEFAULT_CONFIG)
+        config["vault"]["path"] = str(temp_vault)
+        config["curate"]["llm_driven"] = False
+
+        engine = CurationEngine(temp_vault, config)
+        stats = engine.run()
+        assert stats["status"] == "ok"
+        assert stats["processed"] >= 1
+        assert stats["created"] >= 1
+
+    def test_tiny_notes_still_skipped(self, temp_vault):
+        daily_dir = temp_vault / "chronicle" / "daily"
+        atomic_write_text(daily_dir / "2026-08-07.md", "hi")  # below min_note_chars
+
+        config = copy.deepcopy(DEFAULT_CONFIG)
+        config["vault"]["path"] = str(temp_vault)
+
+        engine = CurationEngine(temp_vault, config)
+        stats = engine.run()
+        assert stats["status"] == "ok"
+        assert stats["processed"] == 0

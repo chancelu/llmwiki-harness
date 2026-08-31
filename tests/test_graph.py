@@ -173,3 +173,69 @@ def test_hidden_dirs_excluded(graph, vault):
     _write(vault, ".obsidian/plugins/x.md", "# plugin doc with [[A]]\n")
     graph.rebuild()
     assert graph.stats()["notes"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Embeds & attachments are not note links
+# ---------------------------------------------------------------------------
+
+
+def test_embeds_are_not_links(graph, vault):
+    """![[image.png]] embeds must not produce edges or dead links."""
+    _write(vault, "entities/a.md", "# A\n\n![[photo.png]]\n\nSee [[B]].\n")
+    _write(vault, "concepts/b.md", "# B\n")
+    graph.rebuild()
+    assert graph.neighbors("entities/a.md") == ["concepts/b.md"]
+    assert graph.dead_links() == []
+
+
+def test_attachment_links_skipped(graph, vault):
+    """[[doc.pdf]]-style links to non-Markdown files are not note links."""
+    _write(vault, "entities/a.md", "# A\n\nAttachment: [[spec.pdf]] and [[sheet.xlsx]].\n")
+    graph.rebuild()
+    assert graph.neighbors("entities/a.md") == []
+    assert graph.dead_links() == []
+
+
+def test_explicit_md_suffix_link_resolves(graph, vault):
+    """[[note.md]] with explicit suffix resolves like [[note]]."""
+    _write(vault, "entities/a.md", "# A\n\nSee [[b.md]].\n")
+    _write(vault, "concepts/b.md", "# B\n")
+    graph.rebuild()
+    assert graph.neighbors("entities/a.md") == ["concepts/b.md"]
+
+
+# ---------------------------------------------------------------------------
+# Frontmatter aliases (Obsidian)
+# ---------------------------------------------------------------------------
+
+
+def test_alias_frontmatter_inline_list(graph, vault):
+    _write(vault, "entities/a.md", "# A\n\nSee [[KG]].\n")
+    _write(
+        vault,
+        "concepts/knowledge-graph.md",
+        '---\naliases: [KG, "Knowledge Graphs"]\n---\n\n# Knowledge Graph\n',
+    )
+    graph.rebuild()
+    assert graph.neighbors("entities/a.md") == ["concepts/knowledge-graph.md"]
+    assert graph.resolve("Knowledge Graphs") == "concepts/knowledge-graph.md"
+
+
+def test_alias_frontmatter_block_list(graph, vault):
+    _write(vault, "entities/a.md", "# A\n\nSee [[KG]].\n")
+    _write(
+        vault,
+        "concepts/knowledge-graph.md",
+        "---\naliases:\n  - KG\n  - 知识图谱\n---\n\n# Knowledge Graph\n",
+    )
+    graph.rebuild()
+    assert graph.neighbors("entities/a.md") == ["concepts/knowledge-graph.md"]
+    assert graph.resolve("知识图谱") == "concepts/knowledge-graph.md"
+
+
+def test_no_frontmatter_means_no_aliases(graph, vault):
+    _write(vault, "entities/a.md", "# A\n\nSee [[KG]].\n")
+    _write(vault, "concepts/knowledge-graph.md", "# Knowledge Graph\n\nNo frontmatter.\n")
+    graph.rebuild()
+    assert graph.dead_links() == [("entities/a.md", "KG")]

@@ -56,6 +56,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "schedule": "0 2 * * *",  # cron expression
         "archive_after_days": 30,
         "llm_driven": True,
+        "min_note_chars": 80,  # daily notes shorter than this are skipped as trivial
     },
 }
 

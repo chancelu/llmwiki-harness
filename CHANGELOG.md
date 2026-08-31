@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.1 — Obsidian Compatibility Fixes
+
+### Fixes
+- **`![[embed]]` no longer parsed as wikilinks** — image/file embeds stopped
+  producing phantom dead links in `llmwiki health`
+- **Attachment links skipped** — `[[doc.pdf]]`-style links to non-Markdown
+  files are not note links; `[[note.md]]` with an explicit suffix resolves
+- **Frontmatter aliases resolve** — Obsidian `aliases:` (inline list and
+  block list forms) are registered in the link index, so `[[Alias]]` links
+  now resolve instead of dying
+- **Short daily notes are curated** — the 200-char minimum dropped light-use
+  days entirely; now configurable via `curate.min_note_chars` (default 80)
+
+### Tests
+- 76 tests (7 new graph tests for embeds/attachments/aliases, 2 new curation
+  threshold tests); fixed a latent test-pollution bug (shallow copy of
+  DEFAULT_CONFIG leaking `llm_driven=False` across test files)
+
 ## 0.4.0 — Self-Sustaining Memory Loop
 
 ### New Features

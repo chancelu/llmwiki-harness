@@ -57,6 +57,9 @@ class CurationEngine:
         }
         self.archive_after_days = config.get("curate", {}).get("archive_after_days", 30)
         self.llm_driven = config.get("curate", {}).get("llm_driven", True)
+        # Notes shorter than this are skipped as trivial. Kept low on purpose:
+        # a single captured turn is often ~150 chars and still worth distilling.
+        self.min_note_chars = config.get("curate", {}).get("min_note_chars", 80)
 
     def run(self, llm_generate: Optional[Callable[[str], str]] = None) -> Dict[str, Any]:
         """Run the full curation pipeline.
@@ -90,7 +93,7 @@ class CurationEngine:
                 logger.warning("Failed to read %s: %s", note_path, e)
                 continue
 
-            if len(text.strip()) < 200:
+            if len(text.strip()) < self.min_note_chars:
                 logger.debug("Skipping trivial note: %s", note_path.name)
                 continue
 

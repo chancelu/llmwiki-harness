@@ -27,7 +27,8 @@ from typing import Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
-_WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
+# Matches [[wikilinks]] but NOT ![[embeds]] (images/files embedded in notes).
+_WIKILINK_RE = re.compile(r"(?<!!)\[\[([^\]]+)\]\]")
 
 
 class LinkGraph:
@@ -100,12 +101,22 @@ class LinkGraph:
         return variants
 
     def _build_stem_index(self, files: Dict[str, float]) -> Dict[str, str]:
-        """Map every stem variant → relative path. First registration wins."""
+        """Map every stem/alias variant → relative path. First registration wins.
+
+        Besides filename stems, frontmatter `aliases:` (Obsidian) are
+        registered as lookup keys, so `[[Alias]]` links resolve to the note.
+        """
         index: Dict[str, str] = {}
         for rel in files:
-            stem = Path(rel).stem
-            for variant in self._stem_variants(stem):
-                index.setdefault(variant, rel)
+            names = [Path(rel).stem]
+            try:
+                text = (self.vault_path / rel).read_text(encoding="utf-8")
+                names.extend(self._extract_aliases(text))
+            except Exception:
+                pass
+            for name in names:
+                for variant in self._stem_variants(name):
+                    index.setdefault(variant, rel)
         return index
 
     @staticmethod
@@ -114,9 +125,42 @@ class LinkGraph:
         links = []
         for m in _WIKILINK_RE.finditer(text):
             target = m.group(1).split("|", 1)[0].split("#", 1)[0].strip()
-            if target:
-                links.append(target)
+            if not target:
+                continue
+            suffix = Path(target).suffix.lower()
+            if suffix == ".md":
+                target = target[:-3]  # explicit [[note.md]] → note
+            elif suffix:
+                continue  # attachment link ([[image.png]], [[doc.pdf]]) — not a note
+            links.append(target)
         return links
+
+    @staticmethod
+    def _extract_aliases(text: str) -> List[str]:
+        """Aliases from YAML frontmatter (Obsidian `aliases:` field).
+
+        Parsed with regexes to stay zero-dependency. Supports both
+        `aliases: [a, b]` and the multiline `- a` list form.
+        """
+        if not text.startswith("---"):
+            return []
+        end = text.find("\n---", 3)
+        if end == -1:
+            return []
+        fm = text[3:end]
+
+        aliases: List[str] = []
+        inline = re.search(r"^aliases:\s*\[(.*?)\]", fm, re.MULTILINE | re.DOTALL)
+        if inline:
+            aliases.extend(a.strip().strip("\"'") for a in inline.group(1).split(","))
+        else:
+            block = re.search(r"^aliases:\s*\n((?:\s*-\s+.+\n?)+)", fm, re.MULTILINE)
+            if block:
+                for line in block.group(1).splitlines():
+                    line = line.strip()
+                    if line.startswith("- "):
+                        aliases.append(line[2:].strip().strip("\"'"))
+        return [a for a in aliases if a]
 
     def _resolve(self, link_name: str, stem_index: Dict[str, str]) -> Optional[str]:
         for variant in self._stem_variants(link_name):
