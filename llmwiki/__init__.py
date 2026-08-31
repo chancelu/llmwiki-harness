@@ -5,9 +5,9 @@ This package provides a zero-dependency framework for indexing,
 retrieving, and injecting local Markdown knowledge into agent prompts.
 """
 
-from llmwiki.core.harness import ContextMemoryHarness
 from llmwiki.core.config import load_config
+from llmwiki.core.harness import ContextMemoryHarness
 from llmwiki.vault.schema import VaultSchema
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = ["ContextMemoryHarness", "load_config", "VaultSchema"]
