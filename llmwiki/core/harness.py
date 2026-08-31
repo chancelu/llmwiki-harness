@@ -68,8 +68,8 @@ class ContextMemoryHarness:
         self.vault_path = Path(self.config["vault"]["path"]).expanduser()
         self.schema = VaultSchema(self.vault_path, self.config["vault"]["schema"])
 
-        # Ensure vault structure exists
-        self.schema.ensure_dirs()
+        # Ensure vault structure exists (also writes SCHEMA.md on first run)
+        self.schema.init_vault()
 
         # Core components
         schema_dirs = list(self.config["vault"]["schema"].values())
