@@ -7,11 +7,10 @@ Agent adapters interact with this class.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from llmwiki.core.assembler import ContextAssembler, available_token_budget, estimate_tokens
+from llmwiki.core.assembler import ContextAssembler
 from llmwiki.core.cache import InMemoryCache
 from llmwiki.core.config import load_config
 from llmwiki.core.graph import LinkGraph
@@ -102,10 +101,14 @@ class ContextMemoryHarness:
 
         # L1 Cache
         cache_cfg = self.config.get("cache", {})
-        self.cache = InMemoryCache(
-            maxsize=cache_cfg.get("maxsize", 100),
-            ttl=cache_cfg.get("ttl", 300),
-        ) if cache_cfg.get("enabled", True) else None
+        self.cache = (
+            InMemoryCache(
+                maxsize=cache_cfg.get("maxsize", 100),
+                ttl=cache_cfg.get("ttl", 300),
+            )
+            if cache_cfg.get("enabled", True)
+            else None
+        )
 
         # Vault operations
         self.capture_engine = TurnCapture(self.vault_path, self.config["vault"]["schema"])
@@ -189,7 +192,9 @@ class ContextMemoryHarness:
             self.graph.update_incremental()
 
         top_k = kwargs.get("top_k", self.config["retrieve"]["default_top_k"])
-        strategies = kwargs.get("strategies", self.config["retrieve"].get("strategies", ["keyword"]))
+        strategies = kwargs.get(
+            "strategies", self.config["retrieve"].get("strategies", ["keyword"])
+        )
 
         return self.retriever.retrieve(
             query=query,

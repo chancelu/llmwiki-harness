@@ -13,9 +13,12 @@ import logging
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 from llmwiki.core.indexer import IndexRegistry
+
+if TYPE_CHECKING:
+    from llmwiki.core.graph import LinkGraph
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +42,7 @@ def _query_tokens(query: str) -> List[str]:
     return tokens
 
 
-def rrf_fusion(
-    results_lists: List[List[Dict]], k: int = 60
-) -> List[Dict]:
+def rrf_fusion(results_lists: List[List[Dict]], k: int = 60) -> List[Dict]:
     """Reciprocal Rank Fusion: combine multiple ranked lists into one.
 
     score = sum(1 / (k + rank)) for each list where the item appears.
@@ -58,10 +59,7 @@ def rrf_fusion(
 
     # Sort by fused score descending
     fused = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    return [
-        {**items[key], "score": score, "fusion": "rrf"}
-        for key, score in fused
-    ]
+    return [{**items[key], "score": score, "fusion": "rrf"} for key, score in fused]
 
 
 class Retriever:
