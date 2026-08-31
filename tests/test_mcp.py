@@ -24,6 +24,7 @@ def harness(tmp_path):
     h = ContextMemoryHarness(config=config)
     mcp_server.set_harness(h)
     yield h
+    h.close()  # release SQLite handles (Windows file locking)
     mcp_server.set_harness(None)
 
 

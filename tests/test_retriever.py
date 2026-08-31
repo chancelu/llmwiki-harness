@@ -27,7 +27,12 @@ def vault(tmp_path):
 @pytest.fixture
 def retriever(vault):
     registry = IndexRegistry(vault, SCHEMA_DIRS, engine_names=["python"])
-    return Retriever(registry, vault)
+    r = Retriever(registry, vault)
+    yield r
+    # Release SQLite handles (Windows file locking)
+    if r.graph is not None:
+        r.graph.close()
+    registry.close()
 
 
 def _daily(vault, days_ago: int, text: str) -> Path:
