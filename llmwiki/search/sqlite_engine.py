@@ -87,22 +87,19 @@ class SQLiteEngine(SearchEngine):
             self._fts5 = "fts5" in sql
             self._trigram = "trigram" in sql
 
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS index_state (
                 key TEXT PRIMARY KEY,
                 value TEXT
             )
-            """
-        )
+            """)
         conn.commit()
 
     def _create_docs_table(self, conn: sqlite3.Connection) -> None:
         """Create the docs table, degrading gracefully by capability."""
         try:
             conn.execute(
-                "CREATE VIRTUAL TABLE docs USING fts5("
-                "path, title, body, tokenize='trigram')"
+                "CREATE VIRTUAL TABLE docs USING fts5(" "path, title, body, tokenize='trigram')"
             )
             self._fts5 = True
             self._trigram = True
@@ -119,9 +116,7 @@ class SQLiteEngine(SearchEngine):
             logger.debug("FTS5 unavailable: %s", e)
 
         logger.warning("SQLite FTS5 not available, falling back to plain tables")
-        conn.execute(
-            "CREATE TABLE docs (path TEXT PRIMARY KEY, title TEXT, body TEXT)"
-        )
+        conn.execute("CREATE TABLE docs (path TEXT PRIMARY KEY, title TEXT, body TEXT)")
         self._fts5 = False
         self._trigram = False
 
