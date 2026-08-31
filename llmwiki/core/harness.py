@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 from llmwiki.core.assembler import ContextAssembler, available_token_budget, estimate_tokens
 from llmwiki.core.cache import InMemoryCache
 from llmwiki.core.config import load_config
+from llmwiki.core.graph import LinkGraph
 from llmwiki.core.indexer import IndexRegistry
 from llmwiki.core.retriever import Retriever
 from llmwiki.vault.capture import TurnCapture
@@ -21,6 +22,16 @@ from llmwiki.vault.curate import CurationEngine
 from llmwiki.vault.schema import VaultSchema
 
 logger = logging.getLogger(__name__)
+
+
+def _package_version() -> str:
+    """Read the installed package version, falling back for source checkouts."""
+    try:
+        from importlib.metadata import version
+
+        return version("llmwiki-harness")
+    except Exception:
+        return "unknown"
 
 
 class ContextMemoryHarness:
@@ -73,7 +84,14 @@ class ContextMemoryHarness:
             engine_names=engine_names,
         )
 
-        self.retriever = Retriever(self.index, self.vault_path)
+        self.graph = LinkGraph(self.vault_path)
+
+        self.retriever = Retriever(
+            self.index,
+            self.vault_path,
+            daily_dir=self.config["vault"]["schema"].get("daily", "chronicle/daily/"),
+            graph=self.graph,
+        )
         self.assembler = ContextAssembler(
             token_budget=self.config["context"]["token_budget"],
             format=self.config["context"]["format"],
@@ -128,6 +146,7 @@ class ContextMemoryHarness:
         # Ensure index is up to date
         if self.config["index"].get("incremental", True):
             self.index.update_incremental()
+            self.graph.update_incremental()
 
         # Retrieve
         budget = token_budget or self.config["context"]["token_budget"]
@@ -167,6 +186,7 @@ class ContextMemoryHarness:
         """
         if self.config["index"].get("incremental", True):
             self.index.update_incremental()
+            self.graph.update_incremental()
 
         top_k = kwargs.get("top_k", self.config["retrieve"]["default_top_k"])
         strategies = kwargs.get("strategies", self.config["retrieve"].get("strategies", ["keyword"]))
@@ -230,8 +250,12 @@ class ContextMemoryHarness:
     # ------------------------------------------------------------------
 
     def build_index(self, force: bool = False) -> None:
-        """Build or rebuild the search index."""
+        """Build or rebuild the search index and the link graph."""
         self.index.build(force=force)
+        if force:
+            self.graph.rebuild()
+        else:
+            self.graph.update_incremental()
 
     def clear_cache(self) -> None:
         """Clear the in-memory cache."""
@@ -242,9 +266,10 @@ class ContextMemoryHarness:
         """Return harness statistics."""
         result = {
             "vault_path": str(self.vault_path),
-            "version": "0.2.0",
+            "version": _package_version(),
             "cache": self.cache.stats() if self.cache else None,
             "index_engines": list(self.index.engines.keys()),
+            "graph": self.graph.stats(),
         }
 
         # Vault stats
