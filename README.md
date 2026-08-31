@@ -39,10 +39,12 @@ It provides a universal **harness** that any agent framework can plug into — n
 |---------|--------|
 | **Multi-engine search** — ripgrep, SQLite FTS, pure Python fallback | ✅ |
 | **Multi-strategy retrieval** — keyword, graph (wikilink traversal), temporal | ✅ |
+| **Knowledge graph edge table** — index-time wikilink graph with backlinks, 2-hop weighted traversal, dead-link/orphan detection | ✅ |
 | **RRF fusion** — combine multiple retrieval strategies | ✅ |
 | **Token budget management** — never overflow the context window | ✅ |
 | **In-memory cache** — avoid repeated disk reads | ✅ |
 | **OpenClaw adapter** — drop-in memory hook | ✅ |
+| **MCP server** — works with Claude Desktop / Claude Code / Cursor / any MCP host | ✅ |
 | **3-layer vault architecture** (Karpathy-native) | ✅ |
 | **Zero dependencies** for core (optional enhancements via extras) | ✅ |
 
@@ -54,6 +56,9 @@ pip install llmwiki-harness
 
 # With semantic search support
 pip install llmwiki-harness[semantic]
+
+# With MCP server support (Claude Desktop / Cursor / any MCP host)
+pip install llmwiki-harness[mcp]
 
 # Dev
 pip install llmwiki-harness[dev]
@@ -122,6 +127,51 @@ hook.on_turn_end(user_message, assistant_response)
 # → auto-captures to chronicle
 ```
 
+## MCP Server
+
+The fastest way to use LLMWiki: run it as an [MCP](https://modelcontextprotocol.io) server and plug it into Claude Desktop, Claude Code, Cursor, Codex, or any MCP-compatible host. The agent gets five memory tools:
+
+| Tool | Purpose |
+|------|---------|
+| `memory_search(query, top_k)` | Raw ranked search over the wiki |
+| `memory_recall(query, token_budget)` | Assembled context block, ready to inject into a prompt |
+| `memory_capture(user_message, assistant_message)` | Store a conversation turn in the chronicle |
+| `memory_curate()` | Distill the chronicle into compiled atomic notes |
+| `memory_stats()` | Vault / index / cache statistics |
+
+### Claude Desktop / Cursor (`claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "llmwiki": {
+      "command": "uvx",
+      "args": ["--from", "llmwiki-harness[mcp]", "llmwiki-mcp"],
+      "env": {
+        "LLMWIKI_VAULT_PATH": "~/Documents/selfwiki"
+      }
+    }
+  }
+}
+```
+
+### Claude Code
+
+```bash
+claude mcp add llmwiki -- uvx --from "llmwiki-harness[mcp]" llmwiki-mcp
+# then set the vault:  export LLMWIKI_VAULT_PATH=~/Documents/selfwiki
+```
+
+### Already installed via pip?
+
+```bash
+pip install llmwiki-harness[mcp]
+llmwiki mcp                          # stdio server, vault from config/env
+llmwiki -v ~/Documents/selfwiki mcp  # explicit vault path
+```
+
+The server speaks stdio (the MCP default for local servers). Compatible with both `mcp` 1.x and 2.x Python SDKs.
+
 ## CLI
 
 ```bash
@@ -131,7 +181,9 @@ llmwiki search "prompt injection" # Search wiki
 llmwiki curate [--llm]           # Run curation pipeline
 llmwiki stats                    # Vault statistics
 llmwiki health                   # Check for dead links, orphans
+llmwiki graph "Zettelkasten"     # Show a note's links, backlinks, 2-hop neighbors
 llmwiki config                   # Show configuration
+llmwiki mcp                      # Start MCP server (stdio) for any MCP host
 ```
 
 ## Configuration
