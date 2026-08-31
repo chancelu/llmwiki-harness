@@ -7,7 +7,9 @@ Usage:
     llmwiki curate [--llm]        Run curation pipeline
     llmwiki stats                 Show vault statistics
     llmwiki health                Check vault health
+    llmwiki graph <name>          Show a note's links, backlinks, 2-hop neighbors
     llmwiki config                Show current configuration
+    llmwiki mcp                   Start MCP server (stdio)
 """
 
 from __future__ import annotations
@@ -46,7 +48,8 @@ def main(argv: Optional[list] = None) -> int:
 
     # init
     init_p = sub.add_parser("init", help="Initialize a new vault")
-    init_p.add_argument("path", nargs="?", default="~/Documents/selfwiki")
+    init_p.add_argument("path", nargs="?", default=None,
+                        help="Vault path (defaults to -v/--vault or config)")
 
     # index
     index_p = sub.add_parser("index", help="Build or update search index")
@@ -68,8 +71,18 @@ def main(argv: Optional[list] = None) -> int:
     # health
     sub.add_parser("health", help="Check vault health")
 
+    # graph
+    graph_p = sub.add_parser("graph", help="Show a note's graph neighborhood")
+    graph_p.add_argument("name", help="Note name or wikilink (e.g. 'Zettelkasten')")
+
     # config
     sub.add_parser("config", help="Show configuration")
+
+    # mcp
+    sub.add_parser(
+        "mcp",
+        help="Start MCP server (stdio) for Claude Desktop / Cursor / any MCP host",
+    )
 
     args = parser.parse_args(argv)
 
@@ -102,14 +115,18 @@ def main(argv: Optional[list] = None) -> int:
         return _cmd_stats(args, config)
     elif args.cmd == "health":
         return _cmd_health(args, config)
+    elif args.cmd == "graph":
+        return _cmd_graph(args, config)
     elif args.cmd == "config":
         return _cmd_config(args, config)
+    elif args.cmd == "mcp":
+        return _cmd_mcp(args, config)
 
     return 0
 
 
 def _cmd_init(args, config) -> int:
-    path = Path(args.path).expanduser()
+    path = Path(args.path or config["vault"]["path"]).expanduser()
     schema = VaultSchema(path, config["vault"]["schema"])
     schema.init_vault()
     print(f"Initialized vault at: {path}")
@@ -166,56 +183,66 @@ def _cmd_stats(args, config) -> int:
 
 def _cmd_health(args, config) -> int:
     harness = ContextMemoryHarness(config=config)
-    vault_path = harness.vault_path
+    graph = harness.graph
+    graph.update_incremental()
 
-    issues = []
     compiled_dirs = ["entities", "concepts", "comparisons", "projects", "queries"]
-    all_notes: dict = {}
-    all_wikilinks: set = set()
-    import re
+    issues = []
+    for source, target in graph.dead_links():
+        issues.append({"type": "dead_link", "source": source, "target": target})
+    for f in graph.orphans(dirs=compiled_dirs):
+        issues.append({"type": "orphan", "file": f})
 
-    for d in compiled_dirs:
-        p = vault_path / d
-        if not p.is_dir():
-            continue
-        for md in p.rglob("*.md"):
-            rel = str(md.relative_to(vault_path))
-            all_notes[rel] = md
-            try:
-                text = md.read_text(encoding="utf-8")
-            except Exception:
-                continue
-            for m in re.finditer(r"\[\[([^\]]+)\]\]", text):
-                all_wikilinks.add(m.group(1).strip())
+    stats = graph.stats()
+    print(json.dumps({"notes": stats["notes"], "edges": stats["edges"], "issues": issues}, indent=2, ensure_ascii=False))
+    return 0
 
-    # Dead links
-    for link in all_wikilinks:
-        found = False
-        for rel in all_notes:
-            if link.lower() in rel.lower().replace("-", " ").replace("_", " "):
-                found = True
-                break
-        if not found:
-            issues.append({"type": "dead_link", "target": link})
 
-    # Orphans
-    linked_targets = set()
-    for link in all_wikilinks:
-        for rel in all_notes:
-            if link.lower() in rel.lower().replace("-", " ").replace("_", " "):
-                linked_targets.add(rel)
-                break
+def _cmd_graph(args, config) -> int:
+    harness = ContextMemoryHarness(config=config)
+    graph = harness.graph
+    graph.update_incremental()
 
-    for rel in all_notes:
-        if rel not in linked_targets:
-            issues.append({"type": "orphan", "file": rel})
+    path = graph.resolve(args.name)
+    if not path:
+        print(f"Note not found: {args.name}", file=sys.stderr)
+        return 1
 
-    print(json.dumps({"notes": len(all_notes), "issues": issues}, indent=2))
+    print(f"# {args.name}  ({path})\n")
+
+    out_links = graph.neighbors(path)
+    print(f"Links out ({len(out_links)}):")
+    for t in out_links:
+        print(f"  → {t}")
+
+    in_links = graph.backlinks(path)
+    print(f"\nBacklinks ({len(in_links)}):")
+    for s in in_links:
+        print(f"  ← {s}")
+
+    hop2 = graph.neighborhood(path, hops=2)
+    hop2_only = {p: w for p, w in hop2.items() if w <= 0.5}
+    if hop2_only:
+        print(f"\n2-hop ({len(hop2_only)}):")
+        for p in sorted(hop2_only):
+            print(f"  ⇢ {p}")
+
     return 0
 
 
 def _cmd_config(args, config) -> int:
     print(json.dumps(config, indent=2))
+    return 0
+
+
+def _cmd_mcp(args, config) -> int:
+    from llmwiki import mcp_server
+
+    try:
+        mcp_server.main(config=config)
+    except RuntimeError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
     return 0
 
 
