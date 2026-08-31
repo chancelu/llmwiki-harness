@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.0 — Self-Sustaining Memory Loop
+
+### New Features
+- **MCP sampling curation**: `memory_curate` now runs extraction through the
+  *host's own LLM* via MCP sampling — zero configuration (no API key, no
+  endpoint). Fallback chain: sampling → `LLMWIKI_LLM_ENDPOINT` → regex
+- **`memory-protocol` MCP prompt**: a host-loadable behavior template
+  encoding when to recall (before answering), capture (after meaningful
+  turns), and curate (periodically) — makes the memory loop self-sustaining
+- **First-run auto-init**: the harness now initializes the full vault
+  skeleton (including `SCHEMA.md`) when pointed at an empty directory
+
+### Fixes
+- serverInfo now reports the real package version in the MCP handshake
+- Temporal-search snippets no longer leak the `# Daily Chronicle:` header
+
+### Tests
+- 68 tests, including sampling-bridge unit tests (success + fallback paths)
+  and server metadata (version, prompt registration)
+
 ## 0.3.0 — MCP Server
 
 ### New Features

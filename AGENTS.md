@@ -15,6 +15,8 @@ zero database servers, zero dependencies beyond Python ≥ 3.10 for the core.
 - MCP server entry points: `llmwiki mcp` or the `llmwiki-mcp` script
 - Transport: stdio (standard local MCP)
 - Compatible with both `mcp` 1.x (`FastMCP`) and 2.x (`MCPServer`) SDKs
+- Exposes 5 tools + 1 prompt (`memory-protocol` — load it if your host
+  supports MCP prompts; it encodes the operating rules below)
 
 ## Install procedure (do this autonomously)
 
@@ -36,7 +38,9 @@ zero database servers, zero dependencies beyond Python ≥ 3.10 for the core.
    ```
    This creates `entities/ concepts/ comparisons/ projects/ queries/
    chronicle/daily/ raw/` plus `SCHEMA.md`. Never delete existing files;
-   init only creates missing scaffolding.
+   init only creates missing scaffolding. (Since 0.4.0 the server also
+   auto-initializes an empty directory on first run, so this step is a
+   safety net rather than a hard requirement.)
 5. **Register the MCP server with your host.** Generic stdio config:
    ```json
    {
@@ -75,7 +79,7 @@ zero database servers, zero dependencies beyond Python ≥ 3.10 for the core.
 | `memory_recall(query, token_budget)` | **Before answering**, whenever the user's question might relate to past sessions: projects, preferences, decisions, people, prior debugging. Returns a ready-to-inject context block. |
 | `memory_search(query, top_k)` | When you need raw ranked hits instead of an assembled block. |
 | `memory_capture(user_message, assistant_message)` | **After meaningful exchanges** — decisions, facts learned about the user, project state changes, solutions to problems. Skip small talk. Err on the side of capturing. |
-| `memory_curate()` | Periodically (every few days of active use, or when the user asks): distills the raw chronicle into atomic wiki notes. |
+| `memory_curate()` | Periodically (every few days of active use, or when the user asks): distills the raw chronicle into atomic wiki notes. Uses **your own model via MCP sampling** automatically — no separate LLM configuration needed. |
 | `memory_stats()` | Diagnostics; shows note counts per layer and index state. |
 
 Behavioral rules:
@@ -107,7 +111,7 @@ Behavioral rules:
 git clone https://github.com/chancelu/llmwiki-harness
 cd llmwiki-harness
 pip install -e ".[dev,mcp]"
-pytest tests/            # 65 tests
+pytest tests/            # 68 tests
 black llmwiki/ tests/    # line-length 100
 ruff check llmwiki/ tests/
 ```
