@@ -1,8 +1,8 @@
 """Search engines for LLMWiki."""
 
 from llmwiki.search.base import SearchEngine, SearchResult
-from llmwiki.search.ripgrep import RipgrepEngine
 from llmwiki.search.python_engine import PythonEngine
+from llmwiki.search.ripgrep import RipgrepEngine
 from llmwiki.search.sqlite_engine import SQLiteEngine
 
 __all__ = [
@@ -23,7 +23,9 @@ ENGINE_REGISTRY = {
 def get_engine(name: str) -> SearchEngine:
     """Get a search engine by name."""
     if name not in ENGINE_REGISTRY:
-        raise ValueError(f"Unknown search engine: {name}. Available: {list(ENGINE_REGISTRY.keys())}")
+        raise ValueError(
+            f"Unknown search engine: {name}. Available: {list(ENGINE_REGISTRY.keys())}"
+        )
     return ENGINE_REGISTRY[name]()
 
 
