@@ -13,12 +13,11 @@ from llmwiki.core.cache import InMemoryCache
 from llmwiki.core.config import DEFAULT_CONFIG, _deep_merge, load_config
 from llmwiki.core.harness import ContextMemoryHarness
 from llmwiki.core.indexer import IndexRegistry
-from llmwiki.core.retriever import Retriever, rrf_fusion
+from llmwiki.core.retriever import rrf_fusion
 from llmwiki.vault.capture import TurnCapture
 from llmwiki.vault.curate import CurationEngine
 from llmwiki.vault.schema import VaultSchema
 from llmwiki.vault.writer import atomic_write_text, safe_filename
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -183,6 +182,7 @@ class TestCache:
         cache = InMemoryCache(maxsize=10, ttl=0)  # 0 = instant expire
         cache.set("x", "y")
         import time
+
         time.sleep(0.01)
         assert cache.get("x") is None
 
@@ -338,9 +338,9 @@ academic and knowledge management contexts today.
     def test_llm_extraction(self, temp_vault):
         # Mock LLM generate
         def mock_llm(prompt: str) -> str:
-            return json.dumps([
-                {"type": "entity", "name": "Ethereum", "content": "A smart contract platform."}
-            ])
+            return json.dumps(
+                [{"type": "entity", "name": "Ethereum", "content": "A smart contract platform."}]
+            )
 
         daily_dir = temp_vault / "chronicle" / "daily"
         note = daily_dir / "2026-08-07.md"
