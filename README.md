@@ -1,5 +1,10 @@
 # LLMWiki
 
+[![CI](https://github.com/chancelu/llmwiki-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/chancelu/llmwiki-harness/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/llmwiki-harness.svg)](https://pypi.org/project/llmwiki-harness/)
+[![Python](https://img.shields.io/pypi/pyversions/llmwiki-harness.svg)](https://pypi.org/project/llmwiki-harness/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 > **Context Window = RAM, Local Wiki = Disk**
 >
 > A zero-dependency framework that turns your local Markdown vault (Obsidian, selfwiki, etc.) into long-term memory for any AI agent.
@@ -38,6 +43,7 @@ It provides a universal **harness** that any agent framework can plug into — n
 | Feature | Status |
 |---------|--------|
 | **Multi-engine search** — ripgrep, SQLite FTS, pure Python fallback | ✅ |
+| **CJK-aware full-text search** — SQLite FTS5 trigram tokenizer + bigram query splitting; Chinese/Japanese/Korean vaults just work | ✅ |
 | **Multi-strategy retrieval** — keyword, graph (wikilink traversal), temporal | ✅ |
 | **Knowledge graph edge table** — index-time wikilink graph with backlinks, 2-hop weighted traversal, dead-link/orphan detection | ✅ |
 | **RRF fusion** — combine multiple retrieval strategies | ✅ |
@@ -225,9 +231,11 @@ curate:
 | Module | Purpose |
 |--------|---------|
 | `Indexer` | Manages search indices (ripgrep, SQLite, etc.) |
+| `LinkGraph` | Persistent wikilink edge table (SQLite): neighbors, backlinks, dead links, orphans |
 | `Retriever` | Multi-strategy recall (keyword, graph, temporal) |
 | `Assembler` | Token-budget-aware context assembly |
 | `Cache` | In-memory LRU cache |
+| `MCP Server` | Exposes memory tools to any MCP host over stdio |
 
 ### Data Flow
 
@@ -266,6 +274,15 @@ Turn End → Capture → chronicle/daily/YYYY-MM-DD.md
 
 - **TypeScript port for DeepSeek Harness**: [`dsh-llmwiki`](https://github.com/chancelu/dsh-llmwiki) — same vault format, native dsh plugin, on npm.
 
+## What's New in 0.3.0
+
+- **MCP server** — `llmwiki mcp` / `llmwiki-mcp` exposes five memory tools (`memory_search`, `memory_recall`, `memory_capture`, `memory_curate`, `memory_stats`) to Claude Desktop, Claude Code, Cursor, Codex, and any MCP host. Compatible with both mcp 1.x (`FastMCP`) and 2.x (`MCPServer`).
+- **Persistent knowledge graph** — wikilinks are extracted at index time into a SQLite edge table (`.llmwiki/graph.db`). The graph retrieval strategy now does weighted 2-hop traversal (forward links 1.0, backlinks 0.8, hop-2 0.5) instead of re-parsing files on every query.
+- **`llmwiki graph` / improved `llmwiki health`** — inspect any note's links, backlinks, and 2-hop neighborhood; health checks report dead links and orphan notes from the edge table.
+- **CJK search fixed** — SQLite engine now prefers the FTS5 `trigram` tokenizer (with graceful fallback), and temporal/keyword matching splits CJK queries into bigrams. Chinese vaults are first-class.
+- **FTS5 query sanitization** — natural-language queries no longer crash `MATCH` on quotes, hyphens, or AND/OR/NOT.
+- **Tooling** — repo-wide black + ruff clean, CI now actually runs on `main` (it was misconfigured to `master`).
+
 ## From hermes-llmwiki
 
 This project evolved from [`hermes-llmwiki`](https://github.com/chancelu/hermes-llmwiki). Key changes in 0.2.0:
@@ -276,6 +293,22 @@ This project evolved from [`hermes-llmwiki`](https://github.com/chancelu/hermes-
 - **Token budget management**: Dynamic context assembly
 - **In-memory cache**: L1 RAM layer for frequent queries
 - **OpenClaw adapter**: First-class adapter for OpenClaw agents
+
+## Development
+
+```bash
+git clone https://github.com/chancelu/llmwiki-harness
+cd llmwiki-harness
+pip install -e ".[dev,mcp]"
+
+pytest tests/          # 65 tests
+black llmwiki/ tests/  # formatting (line-length 100)
+ruff check llmwiki/ tests/
+```
+
+CI runs the test matrix (Linux / Windows / macOS × Python 3.10–3.13) plus black and ruff on every push to `main`.
+
+Releases are published to PyPI via trusted publishing: pushing a `v*` tag triggers the `publish` workflow.
 
 ## License
 
