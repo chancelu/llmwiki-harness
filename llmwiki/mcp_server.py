@@ -112,9 +112,7 @@ def memory_capture(
         Confirmation message with the chronicle note path.
     """
     harness = _get_harness()
-    path = harness.capture_engine.append(
-        user_message, assistant_message, session_id=session_id
-    )
+    path = harness.capture_engine.append(user_message, assistant_message, session_id=session_id)
     harness.clear_cache()  # new knowledge may change recall results
     return f"Captured to {path}"
 

@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from llmwiki.core.config import load_config, save_config
+from llmwiki.core.config import load_config
 from llmwiki.core.harness import ContextMemoryHarness
 from llmwiki.vault.schema import VaultSchema
 
@@ -34,22 +34,17 @@ def main(argv: Optional[list] = None) -> int:
         prog="llmwiki",
         description="LLMWiki: Context-Memory Harness for AI Agents",
     )
-    parser.add_argument(
-        "-v", "--vault", help="Path to vault (overrides config)"
-    )
-    parser.add_argument(
-        "-c", "--config", help="Path to config file"
-    )
-    parser.add_argument(
-        "--verbose", action="store_true", help="Enable verbose logging"
-    )
+    parser.add_argument("-v", "--vault", help="Path to vault (overrides config)")
+    parser.add_argument("-c", "--config", help="Path to config file")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
 
     sub = parser.add_subparsers(dest="cmd")
 
     # init
     init_p = sub.add_parser("init", help="Initialize a new vault")
-    init_p.add_argument("path", nargs="?", default=None,
-                        help="Vault path (defaults to -v/--vault or config)")
+    init_p.add_argument(
+        "path", nargs="?", default=None, help="Vault path (defaults to -v/--vault or config)"
+    )
 
     # index
     index_p = sub.add_parser("index", help="Build or update search index")
@@ -100,8 +95,6 @@ def main(argv: Optional[list] = None) -> int:
     config = load_config(path=config_path)
     if args.vault:
         config["vault"]["path"] = args.vault
-
-    vault_path = Path(config["vault"]["path"]).expanduser()
 
     if args.cmd == "init":
         return _cmd_init(args, config)
@@ -194,7 +187,13 @@ def _cmd_health(args, config) -> int:
         issues.append({"type": "orphan", "file": f})
 
     stats = graph.stats()
-    print(json.dumps({"notes": stats["notes"], "edges": stats["edges"], "issues": issues}, indent=2, ensure_ascii=False))
+    print(
+        json.dumps(
+            {"notes": stats["notes"], "edges": stats["edges"], "issues": issues},
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
     return 0
 
 
@@ -257,16 +256,19 @@ def _make_llm_generate():
 
     def generate(prompt: str) -> str:
         import urllib.request
+
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
-        payload = json.dumps({
-            "model": model or "default",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.2,
-            "max_tokens": 2000,
-        }).encode("utf-8")
+        payload = json.dumps(
+            {
+                "model": model or "default",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.2,
+                "max_tokens": 2000,
+            }
+        ).encode("utf-8")
 
         req = urllib.request.Request(
             endpoint.rstrip("/") + "/v1/chat/completions",
