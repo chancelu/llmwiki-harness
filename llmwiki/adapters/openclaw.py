@@ -7,7 +7,6 @@ Provides per-turn hooks for context injection and capture.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from llmwiki.core.harness import ContextMemoryHarness

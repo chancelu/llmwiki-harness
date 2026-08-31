@@ -55,9 +55,7 @@ class RipgrepEngine(SearchEngine):
         ] + [str(r) for r in search_roots]
 
         try:
-            proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=30, encoding="utf-8"
-            )
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, encoding="utf-8")
         except (subprocess.TimeoutExpired, FileNotFoundError) as e:
             logger.warning("ripgrep search failed: %s", e)
             return []
@@ -135,6 +133,7 @@ def _extract_title(md_path: Path) -> str:
     try:
         text = md_path.read_text(encoding="utf-8")[:2048]
         import re
+
         m = re.search(r"^#\s+(.+)$", text, re.MULTILINE)
         if m:
             return m.group(1).strip()
