@@ -256,7 +256,7 @@ class Retriever:
 
             results.append(
                 {
-                    "path": str(md_file.relative_to(self.vault_path)),
+                    "path": md_file.relative_to(self.vault_path).as_posix(),
                     "title": f"Daily Chronicle: {md_file.stem}",
                     "snippet": snippet,
                     "score": score,

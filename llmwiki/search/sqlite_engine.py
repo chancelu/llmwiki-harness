@@ -153,7 +153,7 @@ class SQLiteEngine(SearchEngine):
                 except Exception:
                     continue
 
-                rel_path = str(md_file.relative_to(vault_path))
+                rel_path = md_file.relative_to(vault_path).as_posix()
                 title = _extract_title(text, md_file)
                 body = _strip_frontmatter(text)
 
@@ -185,7 +185,7 @@ class SQLiteEngine(SearchEngine):
                 vault_path = _infer_vault_path(md_file)
                 if vault_path is None:
                     continue
-                rel_path = str(md_file.relative_to(vault_path))
+                rel_path = md_file.relative_to(vault_path).as_posix()
                 title = _extract_title(text, md_file)
                 body = _strip_frontmatter(text)
 
