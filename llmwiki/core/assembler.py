@@ -171,6 +171,7 @@ class ContextAssembler:
 
         elif self.format == "json":
             import json
+
             return json.dumps(result, ensure_ascii=False)
 
         # Default fallback
@@ -213,6 +214,7 @@ def estimate_tokens(text: str) -> int:
     # Try tiktoken for accuracy
     try:
         import tiktoken
+
         enc = tiktoken.get_encoding("cl100k_base")
         return len(enc.encode(text))
     except ImportError:

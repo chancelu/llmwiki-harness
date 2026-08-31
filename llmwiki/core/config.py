@@ -125,6 +125,7 @@ def _parse_config_file(path: Path) -> Dict[str, Any]:
     if suffix in (".yaml", ".yml"):
         try:
             import yaml
+
             return yaml.safe_load(text) or {}
         except ImportError:
             # Fallback: try JSON if yaml not available
@@ -136,6 +137,7 @@ def _parse_config_file(path: Path) -> Dict[str, Any]:
     # Try YAML first, then JSON
     try:
         import yaml
+
         return yaml.safe_load(text) or {}
     except Exception:
         try:
@@ -163,9 +165,7 @@ def _load_env_config() -> Dict[str, Any]:
         env.setdefault("index", {})["engine"] = os.environ["LLMWIKI_INDEX_ENGINE"]
 
     if "LLMWIKI_RETRIEVE_TOP_K" in os.environ:
-        env.setdefault("retrieve", {})["default_top_k"] = int(
-            os.environ["LLMWIKI_RETRIEVE_TOP_K"]
-        )
+        env.setdefault("retrieve", {})["default_top_k"] = int(os.environ["LLMWIKI_RETRIEVE_TOP_K"])
 
     if "LLMWIKI_CONTEXT_TOKEN_BUDGET" in os.environ:
         env.setdefault("context", {})["token_budget"] = int(
@@ -204,6 +204,7 @@ def save_config(config: Dict[str, Any], path: Path) -> None:
     if suffix in (".yaml", ".yml"):
         try:
             import yaml
+
             path.write_text(yaml.dump(config, default_flow_style=False, allow_unicode=True))
             return
         except ImportError:
