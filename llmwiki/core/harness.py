@@ -267,6 +267,25 @@ class ContextMemoryHarness:
         if self.cache:
             self.cache.clear()
 
+    def close(self) -> None:
+        """Release open resources (SQLite connections for graph and index).
+
+        On Windows, an open SQLite connection locks the database file, so
+        call this when the harness is no longer needed (tests, short-lived
+        scripts). The harness can also be used as a context manager:
+
+            with ContextMemoryHarness("~/vault") as h:
+                ...
+        """
+        self.graph.close()
+        self.index.close()
+
+    def __enter__(self) -> "ContextMemoryHarness":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
     def stats(self) -> Dict[str, Any]:
         """Return harness statistics."""
         result = {

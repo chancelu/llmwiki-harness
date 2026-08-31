@@ -52,6 +52,16 @@ class SQLiteEngine(SearchEngine):
         """SQLite is built into Python since 2.5."""
         return True
 
+    def close(self) -> None:
+        """Close the database connection.
+
+        Important on Windows, where an open connection locks the .sqlite
+        file and prevents the vault directory from being deleted.
+        """
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+
     def _db_path(self, vault_path: Path) -> Path:
         return vault_path / self.db_name
 
