@@ -7,7 +7,7 @@
 
 > **Context Window = RAM, Local Wiki = Disk**
 >
-> A zero-dependency framework that turns your local Markdown vault (Obsidian, selfwiki, etc.) into long-term memory for any AI agent.
+> A zero-dependency, agent-agnostic long-term memory layer. Your memories live as plain Markdown files on your machine — any AI agent can read them, write them, and carry them across sessions.
 
 > PyPI note: the distribution is published as **`llmwiki-harness`** (`pip install llmwiki-harness`). The bare `llmwiki` name on PyPI belongs to an unrelated third-party project — do not `pip install llmwiki`. The Python import package and CLI are still called `llmwiki`.
 
@@ -18,11 +18,11 @@ Every serious agent user hits the same wall: the agent forgets everything betwee
 - **Your context window** as volatile RAM (fast, limited, per-session)
 - **Your local Markdown wiki** as persistent Disk (slow, unlimited, cross-session)
 
-It provides a universal **harness** that any agent framework can plug into — no Docker, no cloud, no vector DB required.
+LLMWiki is **not tied to any agent product**. It speaks MCP (the open Model Context Protocol), so it plugs into any MCP-compatible host — and its vault is plain Markdown, so even agents without MCP can read it directly. Your memories outlive any single agent, model, or vendor.
 
 ```
 ┌─────────────────────────────────────────────┐
-│  Agent (OpenClaw / LangChain / AutoGen ...) │
+│  Any agent (via MCP or direct file access)  │
 │  ┌───────────────────────────────────────┐  │
 │  │  L1: Context Window (RAM)             │  │
 │  │  ├── Current conversation             │  │
@@ -38,47 +38,25 @@ It provides a universal **harness** that any agent framework can plug into — n
 └─────────────────────────────────────────────┘
 ```
 
-## Features
+## Install It Through Your Agent (easiest)
 
-| Feature | Status |
-|---------|--------|
-| **Multi-engine search** — ripgrep, SQLite FTS, pure Python fallback | ✅ |
-| **CJK-aware full-text search** — SQLite FTS5 trigram tokenizer + bigram query splitting; Chinese/Japanese/Korean vaults just work | ✅ |
-| **Multi-strategy retrieval** — keyword, graph (wikilink traversal), temporal | ✅ |
-| **Knowledge graph edge table** — index-time wikilink graph with backlinks, 2-hop weighted traversal, dead-link/orphan detection | ✅ |
-| **RRF fusion** — combine multiple retrieval strategies | ✅ |
-| **Token budget management** — never overflow the context window | ✅ |
-| **In-memory cache** — avoid repeated disk reads | ✅ |
-| **OpenClaw adapter** — drop-in memory hook | ✅ |
-| **MCP server** — works with Claude Desktop / Claude Code / Cursor / any MCP host | ✅ |
-| **3-layer vault architecture** (Karpathy-native) | ✅ |
-| **Zero dependencies** for core (optional enhancements via extras) | ✅ |
+LLMWiki ships an [AGENTS.md](AGENTS.md) machine-readable install guide. Paste this into any agent (Claude, Cursor, Codex, Kimi, …):
 
-## Install
+> **Read <https://github.com/chancelu/llmwiki-harness/blob/main/AGENTS.md> and set up LLMWiki as my long-term memory. My notes should live at `~/Documents/selfwiki`.**
+
+The agent will install the package, initialize the vault, register the MCP server with your host, and verify it works — no manual steps.
+
+## Install It Yourself
+
+### 1. Install + initialize a vault
 
 ```bash
-# Core (zero dependencies)
-pip install llmwiki-harness
-
-# With semantic search support
-pip install llmwiki-harness[semantic]
-
-# With MCP server support (Claude Desktop / Cursor / any MCP host)
-pip install llmwiki-harness[mcp]
-
-# Dev
-pip install llmwiki-harness[dev]
+pip install "llmwiki-harness[mcp]"   # core + MCP server
+llmwiki init ~/Documents/selfwiki    # creates the vault skeleton
 ```
 
-## Quick Start
+The vault structure:
 
-### 1. Initialize a vault
-
-```bash
-llmwiki init ~/Documents/selfwiki
-```
-
-This creates the directory structure:
 ```
 ~/Documents/selfwiki/
 ├── raw/              # Layer 1: session dumps
@@ -91,7 +69,65 @@ This creates the directory structure:
 └── SCHEMA.md
 ```
 
-### 2. Use in your agent
+Already have an Obsidian vault? Point LLMWiki at it instead — the Markdown is read as-is, wikilinks included.
+
+### 2. Register with your MCP host
+
+Generic stdio config (works with any MCP client):
+
+```json
+{
+  "mcpServers": {
+    "llmwiki": {
+      "command": "llmwiki-mcp",
+      "env": { "LLMWIKI_VAULT_PATH": "/absolute/path/to/selfwiki" }
+    }
+  }
+}
+```
+
+Where to put it:
+
+| Host | Config location |
+|------|-----------------|
+| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) · `%APPDATA%\Claude\claude_desktop_config.json` (Windows) |
+| Cursor | `~/.cursor/mcp.json` |
+| Claude Code | `claude mcp add llmwiki --env LLMWIKI_VAULT_PATH=/path -- llmwiki-mcp` |
+| Codex CLI | `~/.codex/config.toml` |
+| Any other MCP host | standard stdio server registration |
+
+Notes: use absolute paths (some hosts don't expand `~`). If `llmwiki-mcp` isn't on the host's PATH, use the absolute path from `which llmwiki-mcp`, or `"command": "uvx", "args": ["--from", "llmwiki-harness[mcp]", "llmwiki-mcp"]` (slower cold start). The server speaks stdio and is compatible with both `mcp` 1.x and 2.x Python SDKs.
+
+### 3. What your agent gets
+
+Five memory tools:
+
+| Tool | Purpose |
+|------|---------|
+| `memory_search(query, top_k)` | Raw ranked search over the wiki |
+| `memory_recall(query, token_budget)` | Assembled context block, ready to inject into a prompt |
+| `memory_capture(user_message, assistant_message)` | Store a conversation turn in the chronicle |
+| `memory_curate()` | Distill the chronicle into compiled atomic notes |
+| `memory_stats()` | Vault / index / cache statistics |
+
+## Features
+
+| Feature | Status |
+|---------|--------|
+| **Multi-engine search** — ripgrep, SQLite FTS, pure Python fallback | ✅ |
+| **CJK-aware full-text search** — SQLite FTS5 trigram tokenizer + bigram query splitting; Chinese/Japanese/Korean vaults just work | ✅ |
+| **Multi-strategy retrieval** — keyword, graph (wikilink traversal), temporal | ✅ |
+| **Knowledge graph edge table** — index-time wikilink graph with backlinks, 2-hop weighted traversal, dead-link/orphan detection | ✅ |
+| **RRF fusion** — combine multiple retrieval strategies | ✅ |
+| **Token budget management** — never overflow the context window | ✅ |
+| **In-memory cache** — avoid repeated disk reads | ✅ |
+| **MCP server** — any MCP-compatible host, stdio transport | ✅ |
+| **3-layer vault architecture** (Karpathy-native) | ✅ |
+| **Zero dependencies** for core (optional enhancements via extras) | ✅ |
+
+## Use as a Python Library
+
+For custom agent frameworks, skip MCP and use the harness directly:
 
 ```python
 from llmwiki import ContextMemoryHarness
@@ -117,66 +153,6 @@ harness.capture_turn(user_message, assistant_response)
 # Periodically — curate chronicle into compiled notes
 harness.curate()
 ```
-
-### 3. OpenClaw adapter
-
-```python
-from llmwiki.adapters import OpenClawMemoryHook
-
-hook = OpenClawMemoryHook("~/Documents/selfwiki")
-
-# On each turn:
-wiki_context = hook.on_turn_start(user_message)
-# → inject into system prompt
-
-hook.on_turn_end(user_message, assistant_response)
-# → auto-captures to chronicle
-```
-
-## MCP Server
-
-The fastest way to use LLMWiki: run it as an [MCP](https://modelcontextprotocol.io) server and plug it into Claude Desktop, Claude Code, Cursor, Codex, or any MCP-compatible host. The agent gets five memory tools:
-
-| Tool | Purpose |
-|------|---------|
-| `memory_search(query, top_k)` | Raw ranked search over the wiki |
-| `memory_recall(query, token_budget)` | Assembled context block, ready to inject into a prompt |
-| `memory_capture(user_message, assistant_message)` | Store a conversation turn in the chronicle |
-| `memory_curate()` | Distill the chronicle into compiled atomic notes |
-| `memory_stats()` | Vault / index / cache statistics |
-
-### Claude Desktop / Cursor (`claude_desktop_config.json`)
-
-```json
-{
-  "mcpServers": {
-    "llmwiki": {
-      "command": "uvx",
-      "args": ["--from", "llmwiki-harness[mcp]", "llmwiki-mcp"],
-      "env": {
-        "LLMWIKI_VAULT_PATH": "~/Documents/selfwiki"
-      }
-    }
-  }
-}
-```
-
-### Claude Code
-
-```bash
-claude mcp add llmwiki -- uvx --from "llmwiki-harness[mcp]" llmwiki-mcp
-# then set the vault:  export LLMWIKI_VAULT_PATH=~/Documents/selfwiki
-```
-
-### Already installed via pip?
-
-```bash
-pip install llmwiki-harness[mcp]
-llmwiki mcp                          # stdio server, vault from config/env
-llmwiki -v ~/Documents/selfwiki mcp  # explicit vault path
-```
-
-The server speaks stdio (the MCP default for local servers). Compatible with both `mcp` 1.x and 2.x Python SDKs.
 
 ## CLI
 
@@ -251,7 +227,7 @@ Turn End → Capture → chronicle/daily/YYYY-MM-DD.md
                      compiled/entities/ | concepts/ | projects/
 ```
 
-## Vault Schema (Karpathy 3-Layer)
+### Vault Schema (Karpathy 3-Layer)
 
 ```
 ┌─────────────────────────────────────────┐
@@ -270,13 +246,20 @@ Turn End → Capture → chronicle/daily/YYYY-MM-DD.md
 └─────────────────────────────────────────┘
 ```
 
+## Legacy Adapters
+
+`llmwiki/adapters/openclaw.py` predates MCP and is kept for existing
+OpenClaw users. For anything new, use the MCP server — it is the
+framework-neutral integration path and the only one under active
+development.
+
 ## Ecosystem
 
 - **TypeScript port for DeepSeek Harness**: [`dsh-llmwiki`](https://github.com/chancelu/dsh-llmwiki) — same vault format, native dsh plugin, on npm.
 
 ## What's New in 0.3.0
 
-- **MCP server** — `llmwiki mcp` / `llmwiki-mcp` exposes five memory tools (`memory_search`, `memory_recall`, `memory_capture`, `memory_curate`, `memory_stats`) to Claude Desktop, Claude Code, Cursor, Codex, and any MCP host. Compatible with both mcp 1.x (`FastMCP`) and 2.x (`MCPServer`).
+- **MCP server** — `llmwiki mcp` / `llmwiki-mcp` exposes five memory tools (`memory_search`, `memory_recall`, `memory_capture`, `memory_curate`, `memory_stats`) to any MCP-compatible host. Compatible with both mcp 1.x (`FastMCP`) and 2.x (`MCPServer`).
 - **Persistent knowledge graph** — wikilinks are extracted at index time into a SQLite edge table (`.llmwiki/graph.db`). The graph retrieval strategy now does weighted 2-hop traversal (forward links 1.0, backlinks 0.8, hop-2 0.5) instead of re-parsing files on every query.
 - **`llmwiki graph` / improved `llmwiki health`** — inspect any note's links, backlinks, and 2-hop neighborhood; health checks report dead links and orphan notes from the edge table.
 - **CJK search fixed** — SQLite engine now prefers the FTS5 `trigram` tokenizer (with graceful fallback), and temporal/keyword matching splits CJK queries into bigrams. Chinese vaults are first-class.
@@ -292,7 +275,6 @@ This project evolved from [`hermes-llmwiki`](https://github.com/chancelu/hermes-
 - **Multi-strategy retrieval**: keyword + graph + temporal + RRF fusion
 - **Token budget management**: Dynamic context assembly
 - **In-memory cache**: L1 RAM layer for frequent queries
-- **OpenClaw adapter**: First-class adapter for OpenClaw agents
 
 ## Development
 
