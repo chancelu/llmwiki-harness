@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llmwiki-harness"
-version = "0.2.2"
+version = "0.3.0"
 description = "Context-Memory Harness for AI Agents. Context Window = RAM, Local Wiki = Disk."
 readme = "README.md"
 license = {text = "MIT"}
@@ -34,10 +34,12 @@ Issues = "https://github.com/chancelu/llmwiki-harness/issues"
 
 [project.scripts]
 llmwiki = "llmwiki.cli:main"
+llmwiki-mcp = "llmwiki.mcp_server:main"
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-asyncio", "black", "ruff"]
 semantic = ["sentence-transformers", "numpy"]
+mcp = ["mcp>=1.2.0"]
 
 [tool.setuptools.packages.find]
 where = ["."]
