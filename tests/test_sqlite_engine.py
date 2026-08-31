@@ -26,8 +26,7 @@ def vault(tmp_path):
 def engine(vault):
     e = SQLiteEngine()
     yield e
-    if e._conn is not None:
-        e._conn.close()
+    e.close()  # release the SQLite handle (Windows file locking)
 
 
 def _write(vault, rel: str, text: str):

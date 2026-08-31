@@ -124,6 +124,17 @@ class IndexRegistry:
             for r in results
         ]
 
+    def close(self) -> None:
+        """Release resources held by the registered engines.
+
+        Calls ``close()`` on every engine that provides it (e.g. the SQLite
+        engine, whose open connection locks its database file on Windows).
+        """
+        for engine in self.engines.values():
+            close = getattr(engine, "close", None)
+            if callable(close):
+                close()
+
     def _is_up_to_date(self) -> bool:
         """Check if the index is up to date with the vault files."""
         self._load_index_state()
