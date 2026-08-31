@@ -138,9 +138,7 @@ class CurationEngine:
 
         return self._extract_with_regex(text)
 
-    def _extract_with_llm(
-        self, text: str, llm_generate: Callable[[str], str]
-    ) -> List[Dict]:
+    def _extract_with_llm(self, text: str, llm_generate: Callable[[str], str]) -> List[Dict]:
         """Use LLM to extract structured items."""
         truncated = text[:6000] if len(text) > 6000 else text
         prompt = _CURATION_PROMPT.replace("{note_text}", truncated)
@@ -203,16 +201,25 @@ class CurationEngine:
             if not name or not content or len(content) < 20:
                 continue
 
-            if item_type not in ("entity", "concept", "comparison", "project", "decision", "finding"):
+            if item_type not in (
+                "entity",
+                "concept",
+                "comparison",
+                "project",
+                "decision",
+                "finding",
+            ):
                 item_type = "note"
 
-            valid.append({
-                "type": item_type,
-                "name": name,
-                "content": content,
-                "date": datetime.now().strftime("%Y-%m-%d"),
-                "tags": item.get("tags", []),
-            })
+            valid.append(
+                {
+                    "type": item_type,
+                    "name": name,
+                    "content": content,
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "tags": item.get("tags", []),
+                }
+            )
 
         return valid
 
@@ -233,13 +240,15 @@ class CurationEngine:
             if not name or not content:
                 continue
 
-            items.append({
-                "type": item_type,
-                "name": name,
-                "content": content,
-                "date": datetime.now().strftime("%Y-%m-%d"),
-                "tags": [],
-            })
+            items.append(
+                {
+                    "type": item_type,
+                    "name": name,
+                    "content": content,
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "tags": [],
+                }
+            )
 
         # If no structured markers but note has substance, create summary
         if not items and len(text.strip()) > 300:
@@ -248,15 +257,19 @@ class CurationEngine:
                 title = title_match.group(1).strip()
             else:
                 first_sentence = text.split(".")[0].strip()
-                title = (first_sentence[:60] + "...") if len(first_sentence) > 60 else first_sentence
+                title = (
+                    (first_sentence[:60] + "...") if len(first_sentence) > 60 else first_sentence
+                )
 
-            items.append({
-                "type": "note",
-                "name": title or "Daily Summary",
-                "content": text[:2000],
-                "date": datetime.now().strftime("%Y-%m-%d"),
-                "tags": [],
-            })
+            items.append(
+                {
+                    "type": "note",
+                    "name": title or "Daily Summary",
+                    "content": text[:2000],
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "tags": [],
+                }
+            )
 
         return items
 
@@ -276,7 +289,7 @@ class CurationEngine:
         }
 
         target_dir = self.compiled_dirs.get(type_to_dir.get(note_type, "concepts"))
-        safe_name = re.sub(r'[<>\":/\\|?*]', "_", name).strip(". ")
+        safe_name = re.sub(r"[<>\":/\\|?*]", "_", name).strip(". ")
         if not safe_name:
             safe_name = "untitled"
 

@@ -49,10 +49,7 @@ class LinkGraph:
             self._conn = sqlite3.connect(str(db_path))
             self._conn.row_factory = sqlite3.Row
             self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS files ("
-                "  path TEXT PRIMARY KEY,"
-                "  mtime REAL"
-                ")"
+                "CREATE TABLE IF NOT EXISTS files (" "  path TEXT PRIMARY KEY," "  mtime REAL" ")"
             )
             self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS edges ("
@@ -62,12 +59,8 @@ class LinkGraph:
                 "  UNIQUE(source, target)"
                 ")"
             )
-            self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source)"
-            )
-            self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target)"
-            )
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source)")
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target)")
             self._conn.commit()
         return self._conn
 
@@ -187,16 +180,9 @@ class LinkGraph:
         """
         conn = self._connect()
         current = self._scan_files()
-        known = {
-            row["path"]: row["mtime"]
-            for row in conn.execute("SELECT path, mtime FROM files")
-        }
+        known = {row["path"]: row["mtime"] for row in conn.execute("SELECT path, mtime FROM files")}
 
-        changed = [
-            rel
-            for rel, mtime in current.items()
-            if rel not in known or mtime > known[rel]
-        ]
+        changed = [rel for rel, mtime in current.items() if rel not in known or mtime > known[rel]]
         removed = [rel for rel in known if rel not in current]
 
         if not changed and not removed:
@@ -219,15 +205,11 @@ class LinkGraph:
             conn.execute("DELETE FROM files WHERE path = ?", (rel,))
             conn.execute("DELETE FROM edges WHERE source = ?", (rel,))
             # Inbound edges to a deleted note become dead links
-            conn.execute(
-                "UPDATE edges SET resolved = 0 WHERE target = ?", (rel,)
-            )
+            conn.execute("UPDATE edges SET resolved = 0 WHERE target = ?", (rel,))
 
         # Edges that were dead may now resolve (a target note was created)
         if changed:
-            dead = conn.execute(
-                "SELECT DISTINCT target FROM edges WHERE resolved = 0"
-            ).fetchall()
+            dead = conn.execute("SELECT DISTINCT target FROM edges WHERE resolved = 0").fetchall()
             for row in dead:
                 target = self._resolve(row["target"], stem_index)
                 if target:
@@ -238,8 +220,9 @@ class LinkGraph:
                     )
 
         conn.commit()
-        logger.debug("LinkGraph incremental update: %d changed, %d removed",
-                     len(changed), len(removed))
+        logger.debug(
+            "LinkGraph incremental update: %d changed, %d removed", len(changed), len(removed)
+        )
         return len(changed) + len(removed)
 
     # ------------------------------------------------------------------
@@ -320,20 +303,13 @@ class LinkGraph:
     def resolve(self, link_name: str) -> Optional[str]:
         """Resolve a link name to a vault-relative path, or None."""
         conn = self._connect()
-        files = {
-            row["path"]: row["mtime"]
-            for row in conn.execute("SELECT path, mtime FROM files")
-        }
+        files = {row["path"]: row["mtime"] for row in conn.execute("SELECT path, mtime FROM files")}
         stem_index = self._build_stem_index(files)
         return self._resolve(link_name, stem_index)
 
     def stats(self) -> Dict[str, int]:
         conn = self._connect()
         notes = conn.execute("SELECT COUNT(*) AS c FROM files").fetchone()["c"]
-        edges = conn.execute(
-            "SELECT COUNT(*) AS c FROM edges WHERE resolved = 1"
-        ).fetchone()["c"]
-        dead = conn.execute(
-            "SELECT COUNT(*) AS c FROM edges WHERE resolved = 0"
-        ).fetchone()["c"]
+        edges = conn.execute("SELECT COUNT(*) AS c FROM edges WHERE resolved = 1").fetchone()["c"]
+        dead = conn.execute("SELECT COUNT(*) AS c FROM edges WHERE resolved = 0").fetchone()["c"]
         return {"notes": notes, "edges": edges, "dead_links": dead}
