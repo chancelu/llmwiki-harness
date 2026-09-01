@@ -24,10 +24,17 @@
 - **Config defaults are deep-copied** — `load_config()` no longer shares
   nested dicts with `DEFAULT_CONFIG`
 
+### Improvements
+- **Size-aware engine auto-selection** — vaults above 5,000 notes now
+  default to the sqlite FTS5 index instead of full-scan engines. Benchmarks
+  (`bench/bench_engines.py`): at 100k notes sqlite answers in ~17 ms vs
+  ~8 s (ripgrep) / ~15 s (python); CJK queries degrade worst on full scans
+
 ### Tests
-- 94 tests: memory-strength decay/rehearsal, via annotation, strength
-  re-ranking, plus `tests/test_eval_recall.py` — a fixed-vault recall
-  regression benchmark (7 keyword/temporal/CJK cases + graph traversal)
+- 98 tests: memory-strength decay/rehearsal, via annotation, strength
+  re-ranking, engine auto-selection, plus `tests/test_eval_recall.py` — a
+  fixed-vault recall regression benchmark (7 keyword/temporal/CJK cases +
+  graph traversal)
 
 ## 0.4.1 — Obsidian Compatibility Fixes
 

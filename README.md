@@ -181,7 +181,7 @@ vault:
   path: ~/Documents/selfwiki
 
 index:
-  engine: ripgrep  # ripgrep | sqlite | hybrid
+  engine: ripgrep  # ripgrep | sqlite | hybrid; auto picks ripgrep, or sqlite for 5k+ notes
   incremental: true
 
 retrieve:
@@ -295,7 +295,7 @@ git clone https://github.com/chancelu/llmwiki-harness
 cd llmwiki-harness
 pip install -e ".[dev,mcp]"
 
-pytest tests/          # 94 tests
+pytest tests/          # 98 tests
 black llmwiki/ tests/  # formatting (line-length 100)
 ruff check llmwiki/ tests/
 ```

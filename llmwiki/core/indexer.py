@@ -41,8 +41,8 @@ class IndexRegistry:
                 except ValueError as e:
                     logger.warning(str(e))
         else:
-            # Default: best single engine
-            engine = auto_select_engine()
+            # Default: best single engine for this vault's size
+            engine = auto_select_engine(vault_path=self.vault_path, schema_dirs=self.schema_dirs)
             self.engines[engine.name] = engine
 
         self._state_path = self.vault_path / ".llmwiki" / "index_state.json"
