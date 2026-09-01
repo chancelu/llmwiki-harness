@@ -111,7 +111,7 @@ Behavioral rules:
 git clone https://github.com/chancelu/llmwiki-harness
 cd llmwiki-harness
 pip install -e ".[dev,mcp]"
-pytest tests/            # 98 tests
+pytest tests/            # 102 tests
 black llmwiki/ tests/    # line-length 100
 ruff check llmwiki/ tests/
 ```

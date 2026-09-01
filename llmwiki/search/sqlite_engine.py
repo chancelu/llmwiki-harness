@@ -68,7 +68,9 @@ class SQLiteEngine(SearchEngine):
     def _connect(self, vault_path: Path) -> sqlite3.Connection:
         if self._conn is None:
             db_path = self._db_path(vault_path)
-            self._conn = sqlite3.connect(str(db_path))
+            # check_same_thread=False: HTTP MCP transport runs tool calls on
+            # the server thread; sqlite3 serialized mode keeps this safe.
+            self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
             self._conn.row_factory = sqlite3.Row
             self._ensure_schema()
         return self._conn

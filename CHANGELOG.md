@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.6.0 — HTTP Transport & Multi-Vault
+
+### New Features
+- **Streamable HTTP transport**: `llmwiki mcp --transport http --port 8000`
+  (plus legacy `--transport sse`) — remote hosts, containers, or one shared
+  memory server for several agents. Verified end-to-end with a real MCP
+  client over HTTP
+- **Multi-vault**: one server serves several named vaults. Configure
+  `vaults:` in `llmwiki.yaml` (or `LLMWIKI_VAULTS="work=~/wiki/work,..."`),
+  then pass the optional `vault` parameter to any tool; `memory_stats`
+  lists the configured vaults
+- **Host compatibility matrix**: [docs/HOSTS.md](docs/HOSTS.md) — per-host
+  setup snippets, transport/sampling support, and how each row is verified
+
+### Fixes
+- **Thread-safe SQLite under HTTP transport** — graph and index connections
+  now use `check_same_thread=False`; tool calls run on the server event-loop
+  thread, which previously crashed cross-thread (caught by the new HTTP
+  e2e test)
+
+### Tests
+- 102 tests: streamable-HTTP e2e (initialize → list_tools → call_tool over
+  a real socket), multi-vault capture/search/stats, unknown-vault errors
+
 ## 0.5.0 — Memory Strength & Explainable Recall
 
 ### New Features

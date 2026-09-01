@@ -1,11 +1,14 @@
 """MCP server for LLMWiki — expose the wiki as memory tools for any MCP host.
 
 Works with any MCP-compatible client (Claude Desktop, Cursor, Codex, ...).
-Transport is stdio (the MCP default for local servers).
+Transports: stdio (the MCP default for local servers), streamable HTTP
+(`--transport http`, for remote hosts / containers / a shared memory
+server), and legacy SSE.
 
 Run it via the CLI:
 
     llmwiki mcp                       # stdio server, vault from config/env
+    llmwiki mcp --transport http --port 8000
     llmwiki -v ~/Documents/selfwiki mcp
 
 or via the dedicated entry point (handy for uvx):
@@ -35,6 +38,7 @@ so the `ctx: Context` tool annotation survives introspection by the SDK.
 """
 
 import asyncio
+import copy
 import json
 import logging
 import sys
@@ -47,22 +51,59 @@ from llmwiki.core.harness import ContextMemoryHarness
 logger = logging.getLogger(__name__)
 
 _harness: Optional[ContextMemoryHarness] = None
+_harnesses: Dict[str, ContextMemoryHarness] = {}  # named extra vaults, lazy
+_config: Optional[Dict[str, Any]] = None  # config snapshot from main()/CLI
 
 
-def _get_harness() -> ContextMemoryHarness:
-    """Lazily build the harness from config file / env vars."""
-    global _harness
-    if _harness is None:
-        config = load_config()
-        _harness = ContextMemoryHarness(config=config)
-        _harness.build_index()
-    return _harness
+def _get_harness(vault: str = "") -> ContextMemoryHarness:
+    """Lazily build the harness from config file / env vars.
+
+    With `vault` naming an entry from the `vaults` config section (or the
+    LLMWIKI_VAULTS env var), returns a harness for that vault instead of
+    the default one. Named harnesses are created on first use and cached.
+    """
+    global _harness, _config
+    if not vault:
+        if _harness is None:
+            _config = _config or load_config()
+            _harness = ContextMemoryHarness(config=_config)
+            _harness.build_index()
+        return _harness
+
+    if vault not in _harnesses:
+        if _config is None:
+            _config = load_config()
+        paths = _config.get("vaults", {})
+        if vault not in paths:
+            known = sorted(paths)
+            raise ValueError(
+                f"Unknown vault {vault!r}. "
+                f"Configured vaults: {known if known else 'none — add a `vaults:` section to llmwiki.yaml'}"
+            )
+        cfg = copy.deepcopy(_config)
+        cfg["vault"]["path"] = paths[vault]
+        h = ContextMemoryHarness(config=cfg)
+        h.build_index()
+        _harnesses[vault] = h
+    return _harnesses[vault]
 
 
-def set_harness(harness: ContextMemoryHarness) -> None:
+def list_vaults() -> Dict[str, str]:
+    """Available vaults: {"": default_path, name: path, ...}."""
+    global _config
+    if _config is None:
+        _config = load_config()
+    out = {"": _config["vault"]["path"]}
+    out.update(_config.get("vaults", {}))
+    return out
+
+
+def set_harness(harness: ContextMemoryHarness, config: Optional[Dict[str, Any]] = None) -> None:
     """Inject a preconfigured harness (used by the CLI and tests)."""
-    global _harness
+    global _harness, _config
     _harness = harness
+    if config is not None:
+        _config = config
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +144,7 @@ RULES:
 # ---------------------------------------------------------------------------
 
 
-def memory_search(query: str, top_k: int = 5) -> str:
+def memory_search(query: str, top_k: int = 5, vault: str = "") -> str:
     """Search the local wiki memory for notes relevant to a query.
 
     Use this before answering when the user might have relevant long-term
@@ -112,17 +153,19 @@ def memory_search(query: str, top_k: int = 5) -> str:
     Args:
         query: Search query, typically the user's message or a topic.
         top_k: Maximum number of notes to return.
+        vault: Named vault to search (from the `vaults` config section).
+            Empty = the default vault.
 
     Returns:
         JSON array of results with path, title, snippet, score, plus "via"
         (which retrieval strategies surfaced the note) and "strength"
         (memory strength in (0, 1], null when never recalled).
     """
-    results = _get_harness().retrieve(query, top_k=top_k)
+    results = _get_harness(vault).retrieve(query, top_k=top_k)
     return json.dumps(results, ensure_ascii=False, indent=2)
 
 
-def memory_recall(query: str, token_budget: int = 2000) -> str:
+def memory_recall(query: str, token_budget: int = 2000, vault: str = "") -> str:
     """Recall wiki knowledge as a ready-to-inject context block.
 
     Like memory_search, but the results are assembled and formatted within
@@ -131,18 +174,20 @@ def memory_recall(query: str, token_budget: int = 2000) -> str:
     Args:
         query: Search query, typically the user's message.
         token_budget: Maximum tokens for the returned context block.
+        vault: Named vault to recall from. Empty = the default vault.
 
     Returns:
         Formatted context string, or an empty string when nothing relevant
         is found in the wiki.
     """
-    return _get_harness().retrieve_and_assemble(query, token_budget=token_budget)
+    return _get_harness(vault).retrieve_and_assemble(query, token_budget=token_budget)
 
 
 def memory_capture(
     user_message: str,
     assistant_message: str,
     session_id: str = "",
+    vault: str = "",
 ) -> str:
     """Capture a conversation turn into the wiki chronicle (long-term memory).
 
@@ -153,23 +198,27 @@ def memory_capture(
         user_message: The user's message.
         assistant_message: The assistant's response.
         session_id: Optional session identifier for grouping turns.
+        vault: Named vault to capture into. Empty = the default vault.
 
     Returns:
         Confirmation message with the chronicle note path.
     """
-    harness = _get_harness()
+    harness = _get_harness(vault)
     path = harness.capture_engine.append(user_message, assistant_message, session_id=session_id)
     harness.clear_cache()  # new knowledge may change recall results
     return f"Captured to {path}"
 
 
-def memory_curate() -> str:
+def memory_curate(vault: str = "") -> str:
     """Run the curation pipeline: distill recent chronicle notes into
     compiled atomic wiki notes (entities, concepts, projects).
 
     When the MCP client supports sampling, the host's own LLM performs the
     extraction (zero configuration). Otherwise falls back to the endpoint
     configured via LLMWIKI_LLM_ENDPOINT, then to regex-based extraction.
+
+    Args:
+        vault: Named vault to curate. Empty = the default vault.
 
     Returns:
         JSON summary with processed/created/archived counts.
@@ -182,18 +231,21 @@ def memory_curate() -> str:
     except Exception as e:  # pragma: no cover - defensive
         logger.debug("LLM callback unavailable: %s", e)
 
-    stats = _get_harness().curate(llm_generate=llm_generate)
+    stats = _get_harness(vault).curate(llm_generate=llm_generate)
     return json.dumps(stats, ensure_ascii=False, indent=2)
 
 
 def memory_stats() -> str:
     """Get statistics about the wiki memory: note counts per layer,
-    active search engines, and cache state.
+    active search engines, cache state, and configured vaults.
 
     Returns:
-        JSON object with vault statistics.
+        JSON object with vault statistics and the available vault names
+        (key "vaults"; empty string is the default vault).
     """
-    return json.dumps(_get_harness().stats(), ensure_ascii=False, indent=2)
+    stats = _get_harness().stats()
+    stats["vaults"] = list_vaults()
+    return json.dumps(stats, ensure_ascii=False, indent=2)
 
 
 _TOOLS = [memory_search, memory_recall, memory_capture, memory_curate, memory_stats]
@@ -247,9 +299,9 @@ def _make_sampling_generate(ctx: Any, loop: asyncio.AbstractEventLoop) -> Option
     return generate
 
 
-async def _curate_via_sampling(ctx: Any) -> str:
+async def _curate_via_sampling(ctx: Any, vault: str = "") -> str:
     """memory_curate variant that prefers the host's LLM via sampling."""
-    harness = _get_harness()
+    harness = _get_harness(vault)
     loop = asyncio.get_running_loop()
 
     # The probe and all sampling calls must happen OFF the event-loop thread:
@@ -312,7 +364,7 @@ def create_server():
         server.tool()(tool_fn)
 
     @server.tool()
-    async def memory_curate(ctx: _Context) -> str:  # noqa: F811
+    async def memory_curate(ctx: _Context, vault: str = "") -> str:  # noqa: F811
         """Run the curation pipeline: distill recent chronicle notes into
         compiled atomic wiki notes (entities, concepts, projects).
 
@@ -320,10 +372,13 @@ def create_server():
         configuration); otherwise falls back to a configured LLM endpoint,
         then regex-based extraction.
 
+        Args:
+            vault: Named vault to curate. Empty = the default vault.
+
         Returns:
             JSON summary with processed/created/archived counts.
         """
-        return await _curate_via_sampling(ctx)
+        return await _curate_via_sampling(ctx, vault)
 
     @server.prompt(
         name="memory-protocol",
@@ -335,8 +390,18 @@ def create_server():
     return server
 
 
-def main(config: Optional[Dict[str, Any]] = None) -> None:
+def main(
+    config: Optional[Dict[str, Any]] = None,
+    transport: str = "stdio",
+    host: str = "127.0.0.1",
+    port: int = 8000,
+) -> None:
     """Entry point for `llmwiki mcp` and the `llmwiki-mcp` script.
+
+    Transports:
+      - stdio (default): the MCP standard for local servers
+      - http: streamable HTTP (remote hosts, containers, shared memory server)
+      - sse: legacy Server-Sent Events transport
 
     All logging goes to stderr — stdout is reserved for the MCP protocol.
     """
@@ -346,10 +411,24 @@ def main(config: Optional[Dict[str, Any]] = None) -> None:
     if config is not None:
         harness = ContextMemoryHarness(config=config)
         harness.build_index()
-        set_harness(harness)
+        set_harness(harness, config=config)
 
     server = create_server()
-    server.run()
+
+    if transport == "stdio":
+        server.run()
+        return
+
+    mcp_transport = "streamable-http" if transport == "http" else transport
+    logger.info("Starting MCP server on http://%s:%d (%s)", host, port, mcp_transport)
+    try:
+        # mcp 2.x: run() forwards host/port to the HTTP async runners
+        server.run(transport=mcp_transport, host=host, port=port)
+    except TypeError:
+        # mcp 1.x FastMCP: host/port live in construction-time settings
+        server.settings.host = host
+        server.settings.port = port
+        server.run(transport=mcp_transport)
 
 
 if __name__ == "__main__":

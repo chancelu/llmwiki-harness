@@ -9,7 +9,7 @@ Usage:
     llmwiki health                Check vault health
     llmwiki graph <name>          Show a note's links, backlinks, 2-hop neighbors
     llmwiki config                Show current configuration
-    llmwiki mcp                   Start MCP server (stdio)
+    llmwiki mcp                   Start MCP server (stdio; --transport http for remote)
 """
 
 from __future__ import annotations
@@ -74,10 +74,18 @@ def main(argv: Optional[list] = None) -> int:
     sub.add_parser("config", help="Show configuration")
 
     # mcp
-    sub.add_parser(
+    mcp_p = sub.add_parser(
         "mcp",
-        help="Start MCP server (stdio) for Claude Desktop / Cursor / any MCP host",
+        help="Start MCP server for Claude Desktop / Cursor / any MCP host",
     )
+    mcp_p.add_argument(
+        "--transport",
+        choices=["stdio", "http", "sse"],
+        default="stdio",
+        help="stdio (default, local hosts) | http (streamable HTTP, remote/shared) | sse (legacy)",
+    )
+    mcp_p.add_argument("--host", default="127.0.0.1", help="Bind host for http/sse transports")
+    mcp_p.add_argument("--port", type=int, default=8000, help="Bind port for http/sse transports")
 
     args = parser.parse_args(argv)
 
@@ -238,7 +246,12 @@ def _cmd_mcp(args, config) -> int:
     from llmwiki import mcp_server
 
     try:
-        mcp_server.main(config=config)
+        mcp_server.main(
+            config=config,
+            transport=getattr(args, "transport", "stdio"),
+            host=getattr(args, "host", "127.0.0.1"),
+            port=getattr(args, "port", 8000),
+        )
     except RuntimeError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1

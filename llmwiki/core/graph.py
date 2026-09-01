@@ -51,7 +51,11 @@ class LinkGraph:
         if self._conn is None:
             db_path = self.vault_path / self.db_name
             db_path.parent.mkdir(parents=True, exist_ok=True)
-            self._conn = sqlite3.connect(str(db_path))
+            # check_same_thread=False: over the HTTP MCP transport, tool calls
+            # run on the server's event-loop thread while the graph may have
+            # been built on the main thread. CPython's sqlite3 is compiled in
+            # serialized mode, so cross-thread use is safe here.
+            self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
             self._conn.row_factory = sqlite3.Row
             self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS files (" "  path TEXT PRIMARY KEY," "  mtime REAL" ")"

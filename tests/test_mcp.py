@@ -206,3 +206,56 @@ def test_curate_sampling_probe_failure_falls_back(harness, monkeypatch):
     assert out["status"] == "ok"
     assert out["llm_mode"] is False  # regex fallback
     assert out["created"] >= 1
+
+
+# ---------------------------------------------------------------------------
+# Multi-vault support
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def multi_vault(tmp_path):
+    """Default vault + a named 'work' vault, wired through mcp_server config."""
+    config = copy.deepcopy(DEFAULT_CONFIG)
+    config["vault"]["path"] = str(tmp_path / "personal")
+    config["cache"]["enabled"] = False
+    config["vaults"] = {"work": str(tmp_path / "workwiki")}
+
+    h = ContextMemoryHarness(config=config)
+    mcp_server.set_harness(h, config=config)
+    yield h
+    h.close()
+    for extra in mcp_server._harnesses.values():
+        extra.close()
+    mcp_server._harnesses.clear()
+    mcp_server.set_harness(None)
+    mcp_server._config = None
+
+
+def test_named_vault_capture_and_search(multi_vault):
+    mcp_server.memory_capture(
+        "What is the Workbench project?",
+        "Workbench is the internal build tool.",
+        vault="work",
+    )
+    # Lands in the named vault, not the default one
+    work_daily = list(
+        (multi_vault.vault_path.parent / "workwiki" / "chronicle" / "daily").glob("*.md")
+    )
+    assert len(work_daily) == 1
+    assert not list((multi_vault.vault_path / "chronicle" / "daily").glob("*.md"))
+
+    out = json.loads(mcp_server.memory_search("Workbench project", vault="work"))
+    assert out, "named vault should return the captured note"
+    assert json.loads(mcp_server.memory_search("Workbench project")) == []
+
+
+def test_named_vault_stats_lists_vaults(multi_vault):
+    stats = json.loads(mcp_server.memory_stats())
+    assert "work" in stats["vaults"]
+    assert "" in stats["vaults"]  # default vault
+
+
+def test_unknown_vault_raises(multi_vault):
+    with pytest.raises(ValueError, match="Unknown vault"):
+        mcp_server.memory_search("anything", vault="nope")

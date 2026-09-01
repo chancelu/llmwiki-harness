@@ -96,7 +96,9 @@ Where to put it:
 | Codex CLI | `~/.codex/config.toml` |
 | Any other MCP host | standard stdio server registration |
 
-Notes: use absolute paths (some hosts don't expand `~`). If `llmwiki-mcp` isn't on the host's PATH, use the absolute path from `which llmwiki-mcp`, or `"command": "uvx", "args": ["--from", "llmwiki-harness[mcp]", "llmwiki-mcp"]` (slower cold start). The server speaks stdio and is compatible with both `mcp` 1.x and 2.x Python SDKs.
+Notes: use absolute paths (some hosts don't expand `~`). If `llmwiki-mcp` isn't on the host's PATH, use the absolute path from `which llmwiki-mcp`, or `"command": "uvx", "args": ["--from", "llmwiki-harness[mcp]", "llmwiki-mcp"]` (slower cold start). The server speaks stdio by default and is compatible with both `mcp` 1.x and 2.x Python SDKs; `llmwiki mcp --transport http` exposes streamable HTTP for remote or shared setups. Per-host setup snippets and the verification matrix live in [docs/HOSTS.md](docs/HOSTS.md).
+
+Multiple vaults (e.g. personal + work) can be served by one server — add a `vaults:` section to `llmwiki.yaml` (or `LLMWIKI_VAULTS="name=path,..."`) and pass the `vault` parameter to any tool.
 
 ### 3. What your agent gets
 
@@ -125,7 +127,8 @@ Plus one MCP **prompt**: `memory-protocol` — a host-loadable behavior template
 | **Explainable recall** — every result carries `via` (which strategies found it) and `strength` | ✅ |
 | **Token budget management** — never overflow the context window | ✅ |
 | **In-memory cache** — avoid repeated disk reads | ✅ |
-| **MCP server** — any MCP-compatible host, stdio transport | ✅ |
+| **MCP server** — any MCP-compatible host; stdio + streamable HTTP + SSE transports | ✅ |
+| **Multi-vault** — one server serves named vaults (personal, work, ...) via a `vault` tool param | ✅ |
 | **3-layer vault architecture** (Karpathy-native) | ✅ |
 | **Zero dependencies** for core (optional enhancements via extras) | ✅ |
 
@@ -170,6 +173,7 @@ llmwiki health                   # Check for dead links, orphans
 llmwiki graph "Zettelkasten"     # Show a note's links, backlinks, 2-hop neighbors
 llmwiki config                   # Show configuration
 llmwiki mcp                      # Start MCP server (stdio) for any MCP host
+llmwiki mcp --transport http --port 8000  # streamable HTTP (remote/shared hosts)
 ```
 
 ## Configuration
@@ -295,7 +299,7 @@ git clone https://github.com/chancelu/llmwiki-harness
 cd llmwiki-harness
 pip install -e ".[dev,mcp]"
 
-pytest tests/          # 98 tests
+pytest tests/          # 102 tests
 black llmwiki/ tests/  # formatting (line-length 100)
 ruff check llmwiki/ tests/
 ```

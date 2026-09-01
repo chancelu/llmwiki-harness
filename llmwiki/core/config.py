@@ -63,6 +63,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "llm_driven": True,
         "min_note_chars": 80,  # daily notes shorter than this are skipped as trivial
     },
+    # Optional named extra vaults for multi-vault setups:
+    #   vaults: {work: ~/Documents/workwiki, research: ~/Documents/research}
+    # The MCP tools take a `vault` parameter to address them; empty = default.
+    "vaults": {},
 }
 
 
@@ -184,6 +188,16 @@ def _load_env_config() -> Dict[str, Any]:
             "1",
             "yes",
         )
+
+    if "LLMWIKI_VAULTS" in os.environ:
+        # Comma-separated name=path pairs: "work=~/wiki/work,research=~/wiki/res"
+        vaults: Dict[str, str] = {}
+        for pair in os.environ["LLMWIKI_VAULTS"].split(","):
+            if "=" in pair:
+                name, p = pair.split("=", 1)
+                if name.strip():
+                    vaults[name.strip()] = os.path.expanduser(p.strip())
+        env["vaults"] = vaults
 
     return env
 
