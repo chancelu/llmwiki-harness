@@ -46,6 +46,7 @@ def test_registry_uses_size_aware_default(tmp_path):
     reg = IndexRegistry(v, SCHEMA_DIRS)
     try:
         assert reg.engines, "auto-selection must yield at least one engine"
+        reg.build(force=True)  # sqlite needs an index build; rg/python don't
         assert reg.search("Note 1", top_k=5)
     finally:
         reg.close()
