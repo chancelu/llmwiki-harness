@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import List
 
-from llmwiki.search.base import SearchEngine, SearchResult
+from llmwiki.search.base import SearchEngine, SearchResult, query_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,11 @@ class RipgrepEngine(SearchEngine):
 
     Requires `rg` to be installed and on PATH.
     Falls back gracefully if not available.
+
+    The query is split into tokens (words, CJK bigrams) and each token is
+    passed as its own `--fixed-strings -e` pattern — rg ORs them, so notes
+    that don't contain the whole query verbatim still match, ranked by
+    token coverage.
     """
 
     name = "ripgrep"
@@ -42,17 +47,23 @@ class RipgrepEngine(SearchEngine):
         if not search_roots:
             return []
 
+        unique_tokens = list(dict.fromkeys(query_tokens(query)))
+        if not unique_tokens:
+            return []
+
         cmd = [
             "rg",
             "--json",
             "--smart-case",
+            "--fixed-strings",
             "--context",
             str(context_lines),
             "--max-count",
             str(top_k * 3),  # overfetch for ranking
-            "-e",
-            query,
-        ] + [str(r) for r in search_roots]
+        ]
+        for tok in unique_tokens:
+            cmd += ["-e", tok]
+        cmd += [str(r) for r in search_roots]
 
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, encoding="utf-8")
@@ -60,7 +71,7 @@ class RipgrepEngine(SearchEngine):
             logger.warning("ripgrep search failed: %s", e)
             return []
 
-        return _parse_ripgrep_output(proc.stdout, query, vault_path, top_k)
+        return _parse_ripgrep_output(proc.stdout, query, unique_tokens, vault_path, top_k)
 
     def update(self, changed_files: List[Path]) -> None:
         """No-op: ripgrep searches files directly."""
@@ -78,7 +89,7 @@ def _resolve_search_roots(vault_path: Path, schema_dirs: List[str]) -> List[Path
 
 
 def _parse_ripgrep_output(
-    stdout: str, query: str, vault_path: Path, top_k: int
+    stdout: str, query: str, unique_tokens: List[str], vault_path: Path, top_k: int
 ) -> List[SearchResult]:
     """Parse ripgrep --json output into SearchResult objects."""
     results: List[SearchResult] = []
@@ -110,7 +121,7 @@ def _parse_ripgrep_output(
                         path=rel,
                         title=_extract_title(Path(current_file)),
                         snippet="\n".join(current_snippets[:3]),
-                        score=_score_result(rel, query, current_snippets),
+                        score=_score_result(rel, query, unique_tokens, current_snippets),
                         engine="ripgrep",
                     )
                 )
@@ -142,14 +153,27 @@ def _extract_title(md_path: Path) -> str:
     return md_path.stem.replace("-", " ").replace("_", " ")
 
 
-def _score_result(path: str, query: str, snippets: List[str]) -> float:
-    """Rough relevance scoring. Higher = better."""
+def _score_result(path: str, query: str, unique_tokens: List[str], snippets: List[str]) -> float:
+    """Coverage-first ranking over matched lines. Higher = better."""
     score = 0.0
     query_lower = query.lower()
+    haystack = "\n".join(snippets).lower()
+
+    # Token coverage dominates (0..10), estimated from the matched lines
+    matched = [t for t in unique_tokens if t in haystack]
+    if unique_tokens:
+        score += len(matched) / len(unique_tokens) * 10.0
+
+    # Exact whole-phrase match bonus
+    if query_lower in haystack:
+        score += 5.0
 
     # Title/filename match
-    if query_lower in path.lower():
+    path_lower = path.lower()
+    if query_lower in path_lower:
         score += 10.0
+    elif any(t in path_lower for t in matched):
+        score += 3.0
 
     # Directory type boost
     if "entities/" in path:
@@ -161,8 +185,8 @@ def _score_result(path: str, query: str, snippets: List[str]) -> float:
     elif "projects/" in path:
         score += 2.0
 
-    # Snippet match density
-    for snippet in snippets:
-        score += snippet.lower().count(query_lower) * 0.5
+    # Raw frequency within matched lines, capped
+    hits = sum(haystack.count(t) for t in matched)
+    score += min(hits, 20) * 0.5
 
     return score

@@ -121,6 +121,8 @@ Plus one MCP **prompt**: `memory-protocol` — a host-loadable behavior template
 | **Multi-strategy retrieval** — keyword, graph (wikilink traversal), temporal | ✅ |
 | **Knowledge graph edge table** — index-time wikilink graph with backlinks, 2-hop weighted traversal, dead-link/orphan detection | ✅ |
 | **RRF fusion** — combine multiple retrieval strategies | ✅ |
+| **Memory strength (forgetting curve)** — recalled notes are boosted, unrehearsed ones decay; never-recalled notes stay neutral (`retrieve.strength_weight`) | ✅ |
+| **Explainable recall** — every result carries `via` (which strategies found it) and `strength` | ✅ |
 | **Token budget management** — never overflow the context window | ✅ |
 | **In-memory cache** — avoid repeated disk reads | ✅ |
 | **MCP server** — any MCP-compatible host, stdio transport | ✅ |
@@ -186,6 +188,7 @@ retrieve:
   default_top_k: 5
   strategies: [keyword, graph, temporal]
   fusion_method: rrf
+  strength_weight: 0.5  # forgetting-curve boost; 0 disables
 
 context:
   token_budget: 4000
@@ -292,7 +295,7 @@ git clone https://github.com/chancelu/llmwiki-harness
 cd llmwiki-harness
 pip install -e ".[dev,mcp]"
 
-pytest tests/          # 68 tests
+pytest tests/          # 94 tests
 black llmwiki/ tests/  # formatting (line-length 100)
 ruff check llmwiki/ tests/
 ```

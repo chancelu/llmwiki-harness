@@ -114,7 +114,9 @@ def memory_search(query: str, top_k: int = 5) -> str:
         top_k: Maximum number of notes to return.
 
     Returns:
-        JSON array of results with path, title, snippet, and score.
+        JSON array of results with path, title, snippet, score, plus "via"
+        (which retrieval strategies surfaced the note) and "strength"
+        (memory strength in (0, 1], null when never recalled).
     """
     results = _get_harness().retrieve(query, top_k=top_k)
     return json.dumps(results, ensure_ascii=False, indent=2)

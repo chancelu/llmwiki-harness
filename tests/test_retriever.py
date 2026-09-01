@@ -153,3 +153,62 @@ def test_graph_ignores_unresolvable_links(retriever, vault):
     )
     results = retriever._graph_search("zorblax", top_k=5)
     assert all("Nowhere" not in r["path"] for r in results)
+
+
+# ---------------------------------------------------------------------------
+# Explainability (via) & memory-strength boosting
+# ---------------------------------------------------------------------------
+
+
+def test_via_field_names_strategies(retriever, vault):
+    """Every result records which strategies surfaced it."""
+    (vault / "entities" / "zorblax.md").write_text(
+        "# Zorblax\n\nThe zorblax protocol.\n", encoding="utf-8"
+    )
+    results = retriever.retrieve("zorblax", top_k=5, strategies=["keyword"])
+    assert results
+    assert results[0]["via"] == ["keyword"]
+    # Never recalled → neutral strength
+    assert results[0]["strength"] is None
+
+
+def test_via_merges_across_strategies(retriever, vault):
+    """A daily note hit by both keyword and temporal lists both in 'via'."""
+    _daily(vault, 0, "long session about the zorblax handshake design\n")
+    results = retriever.retrieve("zorblax handshake", top_k=5, strategies=["keyword", "temporal"])
+    daily_hits = [r for r in results if "chronicle/daily" in r["path"]]
+    assert daily_hits
+    assert set(daily_hits[0]["via"]) == {"keyword", "temporal"}
+
+
+def test_strength_boost_reranks(retriever, vault):
+    """A previously recalled note outranks an equally scored fresh one."""
+    results = [
+        {"path": "entities/fresh.md", "score": 1.0},
+        {"path": "entities/recalled.md", "score": 1.0},
+    ]
+    retriever._get_graph().record_recall(["entities/recalled.md"])
+
+    out = retriever._finalize(list(results), {}, top_k=5)
+    assert out[0]["path"] == "entities/recalled.md"
+    assert out[0]["strength"] is not None and out[0]["strength"] > 0.99
+    assert out[1]["strength"] is None
+
+
+def test_strength_weight_zero_disables_boost(vault):
+    registry = IndexRegistry(vault, SCHEMA_DIRS, engine_names=["python"])
+    r = Retriever(registry, vault, strength_weight=0.0)
+    try:
+        r._get_graph().record_recall(["entities/recalled.md"])
+        results = [
+            {"path": "entities/fresh.md", "score": 1.0},
+            {"path": "entities/recalled.md", "score": 1.0},
+        ]
+        out = r._finalize(list(results), {}, top_k=5)
+        # Order preserved (stable), strength still annotated for transparency
+        assert [x["path"] for x in out] == ["entities/fresh.md", "entities/recalled.md"]
+        assert out[1]["strength"] is not None
+    finally:
+        if r.graph is not None:
+            r.graph.close()
+        registry.close()

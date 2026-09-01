@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.5.0 — Memory Strength & Explainable Recall
+
+### New Features
+- **Forgetting-curve memory strength**: the link graph now records every
+  recall (`note_meta` table) and scores each note with an Ebbinghaus-style
+  decay — `strength = exp(-days / (7 · (1 + ln(recalls))))`. Frequently
+  recalled notes fade slower (spaced repetition); never-recalled notes are
+  neutral, never penalized. Retrieval re-ranks with
+  `score × (1 + retrieve.strength_weight · strength)` (default weight 0.5,
+  set 0 to disable)
+- **Explainable recall**: every result now carries `via` (which strategies
+  surfaced it, e.g. `["keyword", "graph"]`) and `strength` (0–1 or null),
+  visible in `memory_search` JSON output
+
+### Fixes
+- **Token-based keyword search** — both the Python and ripgrep engines
+  matched the *whole query string* verbatim, so "handshake timeout" missed a
+  note saying "handshake design". Queries are now tokenized (words + CJK
+  bigrams, shared `query_tokens` helper), matched per-token, and ranked by
+  coverage with an exact-phrase bonus. The new regression benchmark caught
+  this
+- **Config defaults are deep-copied** — `load_config()` no longer shares
+  nested dicts with `DEFAULT_CONFIG`
+
+### Tests
+- 94 tests: memory-strength decay/rehearsal, via annotation, strength
+  re-ranking, plus `tests/test_eval_recall.py` — a fixed-vault recall
+  regression benchmark (7 keyword/temporal/CJK cases + graph traversal)
+
 ## 0.4.1 — Obsidian Compatibility Fixes
 
 ### Fixes

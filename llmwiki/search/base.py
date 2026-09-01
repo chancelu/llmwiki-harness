@@ -2,10 +2,33 @@
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
+
+_CJK_RE = re.compile(r"[一-鿿぀-ヿ가-힯]")
+
+
+def query_tokens(query: str) -> List[str]:
+    """Split a natural-language query into matchable tokens.
+
+    Whitespace/punctuation-separated words are used as-is. CJK runs longer
+    than 2 characters are split into overlapping bigrams — CJK text has no
+    word boundaries, and bigrams give reliable partial matching without a
+    segmenter (e.g. "知识图谱怎么用" → 知识 / 识图 / 图谱 / 谱怎 / 怎么 / 么用).
+
+    Shared by the search engines and the retriever's temporal strategy so
+    matching semantics stay consistent across the whole recall path.
+    """
+    tokens: List[str] = []
+    for tok in re.findall(r"\w+", query.lower()):
+        if len(tok) > 2 and _CJK_RE.search(tok):
+            tokens.extend(tok[i : i + 2] for i in range(len(tok) - 1))
+        else:
+            tokens.append(tok)
+    return tokens
 
 
 @dataclass

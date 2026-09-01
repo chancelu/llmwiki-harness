@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import List
 
-from llmwiki.search.base import SearchEngine, SearchResult
+from llmwiki.search.base import SearchEngine, SearchResult, query_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,10 @@ class PythonEngine(SearchEngine):
 
     No external dependencies required. Slower than ripgrep for large vaults
     but guaranteed to work everywhere.
+
+    Matching is token-based (any token hits, ranked by coverage), not
+    whole-query substring containment — natural-language queries almost
+    never appear verbatim in a note.
     """
 
     name = "python"
@@ -40,9 +44,12 @@ class PythonEngine(SearchEngine):
         if not search_roots:
             return []
 
+        unique_tokens = list(dict.fromkeys(query_tokens(query)))
+        if not unique_tokens:
+            return []
+
         results: List[SearchResult] = []
         query_lower = query.lower()
-        pattern = re.compile(re.escape(query), re.IGNORECASE)
 
         for root in search_roots:
             for md_file in root.rglob("*.md"):
@@ -51,16 +58,22 @@ class PythonEngine(SearchEngine):
                 except Exception:
                     continue
 
-                if query_lower not in text.lower():
+                text_lower = text.lower()
+                matched = [t for t in unique_tokens if t in text_lower]
+                if not matched:
                     continue
 
-                # Extract snippets around matches
+                # Snippets around the first occurrence of up to 3 tokens
                 snippets = []
-                for m in pattern.finditer(text):
-                    start = max(0, m.start() - 200)
-                    end = min(len(text), m.end() + 200)
-                    snippet = text[start:end].replace("\n", " ").strip()
-                    snippets.append(snippet)
+                seen_pos = set()
+                for tok in matched:
+                    idx = text_lower.find(tok)
+                    if idx in seen_pos:
+                        continue
+                    seen_pos.add(idx)
+                    start = max(0, idx - 200)
+                    end = min(len(text), idx + len(tok) + 200)
+                    snippets.append(text[start:end].replace("\n", " ").strip())
                     if len(snippets) >= 3:
                         break
 
@@ -69,14 +82,13 @@ class PythonEngine(SearchEngine):
                     SearchResult(
                         path=rel_path,
                         title=_extract_title(md_file),
-                        snippet=" ... ".join(snippets) if snippets else "",
-                        score=_score_result(rel_path, query, snippets),
+                        snippet=" ... ".join(snippets),
+                        score=_score_result(
+                            rel_path, query_lower, unique_tokens, matched, text_lower
+                        ),
                         engine="python",
                     )
                 )
-
-                if len(results) >= top_k * 2:
-                    break
 
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:top_k]
@@ -105,13 +117,31 @@ def _extract_title(md_path: Path) -> str:
     return md_path.stem.replace("-", " ").replace("_", " ")
 
 
-def _score_result(path: str, query: str, snippets: List[str]) -> float:
+def _score_result(
+    path: str,
+    query_lower: str,
+    unique_tokens: List[str],
+    matched: List[str],
+    text_lower: str,
+) -> float:
+    """Coverage-first ranking: how much of the query does the note cover?"""
     score = 0.0
-    query_lower = query.lower()
 
-    if query_lower in path.lower():
+    # Token coverage dominates (0..10)
+    score += len(matched) / len(unique_tokens) * 10.0
+
+    # Exact whole-phrase match bonus
+    if query_lower in text_lower:
+        score += 5.0
+
+    # Title/filename match
+    path_lower = path.lower()
+    if query_lower in path_lower:
         score += 10.0
+    elif any(t in path_lower for t in matched):
+        score += 3.0
 
+    # Directory type boost
     if "entities/" in path:
         score += 5.0
     elif "concepts/" in path:
@@ -121,7 +151,8 @@ def _score_result(path: str, query: str, snippets: List[str]) -> float:
     elif "projects/" in path:
         score += 2.0
 
-    for snippet in snippets:
-        score += snippet.lower().count(query_lower) * 0.5
+    # Raw frequency, capped so spammy notes can't dominate
+    hits = sum(text_lower.count(t) for t in matched)
+    score += min(hits, 20) * 0.5
 
     return score

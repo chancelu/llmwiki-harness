@@ -239,3 +239,72 @@ def test_no_frontmatter_means_no_aliases(graph, vault):
     _write(vault, "concepts/knowledge-graph.md", "# Knowledge Graph\n\nNo frontmatter.\n")
     graph.rebuild()
     assert graph.dead_links() == [("entities/a.md", "KG")]
+
+
+# ---------------------------------------------------------------------------
+# Memory strength (forgetting curve)
+# ---------------------------------------------------------------------------
+
+DAY = 86400.0
+
+
+def test_strength_none_when_never_recalled(graph, vault):
+    _write(vault, "entities/a.md", "# A\n")
+    graph.rebuild()
+    assert graph.strength("entities/a.md") is None
+    assert graph.strengths(["entities/a.md", "missing.md"]) == {
+        "entities/a.md": None,
+        "missing.md": None,
+    }
+
+
+def test_record_recall_sets_strength_near_one(graph, vault):
+    graph.record_recall(["entities/a.md"])
+    s = graph.strength("entities/a.md")
+    assert s is not None
+    assert s > 0.99  # recalled just now
+
+
+def test_record_recall_increments_count(graph, vault):
+    graph.record_recall(["entities/a.md"])
+    graph.record_recall(["entities/a.md", "concepts/b.md"])
+    counts = graph.recall_counts()
+    assert counts["entities/a.md"] == 2
+    assert counts["concepts/b.md"] == 1
+
+
+def test_record_recall_empty_is_noop(graph, vault):
+    graph.record_recall([])
+    assert graph.recall_counts() == {}
+
+
+def _age_last_recall(graph, path: str, days: float) -> None:
+    """Test helper: rewind a note's last_recalled_at into the past."""
+    conn = graph._connect()
+    conn.execute(
+        "UPDATE note_meta SET last_recalled_at = ? WHERE path = ?",
+        (time.time() - days * DAY, path),
+    )
+    conn.commit()
+
+
+def test_strength_decays_with_time(graph, vault):
+    """One recall, one base-horizon (7 days) ago → exp(-1) ≈ 0.37."""
+    graph.record_recall(["entities/a.md"])
+    _age_last_recall(graph, "entities/a.md", days=graph.DECAY_BASE_DAYS)
+    s = graph.strength("entities/a.md")
+    assert 0.35 < s < 0.39
+
+
+def test_strength_rehearsed_memory_decays_slower(graph, vault):
+    """Same age, more recalls → higher strength (spaced repetition)."""
+    graph.record_recall(["entities/cold.md"])
+    for _ in range(10):
+        graph.record_recall(["entities/warm.md"])
+    _age_last_recall(graph, "entities/cold.md", days=7)
+    _age_last_recall(graph, "entities/warm.md", days=7)
+
+    cold = graph.strength("entities/cold.md")
+    warm = graph.strength("entities/warm.md")
+    assert warm > cold
+    assert warm > 0.7  # 10 rehearsals stretch the horizon ~3.4x

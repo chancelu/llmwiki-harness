@@ -9,6 +9,8 @@ The graph answers the questions a memory system actually needs:
   - backlinks(path)   — which notes reference this one? (reverse traversal)
   - dead_links()      — links pointing at notes that don't exist
   - orphans()         — notes nothing links to
+  - record_recall()   — memory-strength bookkeeping (forgetting curve)
+  - strength(path)    — decayed recall strength of a note in (0, 1]
 
 Edges are stored resolved (target = vault-relative path) when the link can
 be mapped to a file, or unresolved (resolved = 0) otherwise — dead links are
@@ -20,8 +22,10 @@ Supports Obsidian link syntax: [[Note]], [[Note|alias]], [[Note#section]].
 from __future__ import annotations
 
 import logging
+import math
 import re
 import sqlite3
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -62,6 +66,17 @@ class LinkGraph:
             )
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source)")
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target)")
+            # Memory strength bookkeeping: how often / how recently each note
+            # was actually recalled into an agent context. This powers the
+            # forgetting-curve scoring (see strength()).
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS note_meta ("
+                "  path TEXT PRIMARY KEY,"
+                "  recall_count INTEGER NOT NULL DEFAULT 0,"
+                "  last_recalled_at REAL,"
+                "  created_at REAL"
+                ")"
+            )
             self._conn.commit()
         return self._conn
 
@@ -350,6 +365,71 @@ class LinkGraph:
         files = {row["path"]: row["mtime"] for row in conn.execute("SELECT path, mtime FROM files")}
         stem_index = self._build_stem_index(files)
         return self._resolve(link_name, stem_index)
+
+    # ------------------------------------------------------------------
+    # Memory strength (forgetting curve)
+    # ------------------------------------------------------------------
+
+    # Half-life-ish decay horizon in days for a note recalled once.
+    # Each additional recall stretches the horizon logarithmically
+    # (spaced-repetition style), so well-rehearsed memories fade slower.
+    DECAY_BASE_DAYS = 7.0
+
+    def record_recall(self, paths: List[str]) -> None:
+        """Record that these notes were recalled into an agent context.
+
+        Increments recall_count and stamps last_recalled_at. Idempotent per
+        call — pass the final result list once per retrieval, not per hit.
+        """
+        if not paths:
+            return
+        conn = self._connect()
+        now = time.time()
+        for path in paths:
+            conn.execute(
+                "INSERT INTO note_meta (path, recall_count, last_recalled_at, created_at) "
+                "VALUES (?, 1, ?, ?) "
+                "ON CONFLICT(path) DO UPDATE SET "
+                "  recall_count = recall_count + 1,"
+                "  last_recalled_at = excluded.last_recalled_at",
+                (path, now, now),
+            )
+        conn.commit()
+
+    def strength(self, path: str, now: Optional[float] = None) -> Optional[float]:
+        """Memory strength of a note in (0, 1], or None if never recalled.
+
+        Ebbinghaus-style decay with a spaced-repetition twist:
+
+            strength = exp(-days_since_recall / (BASE * (1 + ln(recalls))))
+
+        A note recalled once just now scores ~1.0; after BASE days ~0.37.
+        Notes with no recall history return None — callers should treat them
+        as neutral (never penalize a memory for being new).
+        """
+        conn = self._connect()
+        row = conn.execute(
+            "SELECT recall_count, last_recalled_at FROM note_meta WHERE path = ?",
+            (path,),
+        ).fetchone()
+        if row is None or row["last_recalled_at"] is None:
+            return None
+        now = time.time() if now is None else now
+        days = max(0.0, (now - row["last_recalled_at"]) / 86400.0)
+        horizon = self.DECAY_BASE_DAYS * (1.0 + math.log(max(1, row["recall_count"])))
+        return math.exp(-days / horizon)
+
+    def strengths(
+        self, paths: List[str], now: Optional[float] = None
+    ) -> Dict[str, Optional[float]]:
+        """Batch strength lookup — {path: strength or None}."""
+        return {p: self.strength(p, now=now) for p in paths}
+
+    def recall_counts(self) -> Dict[str, int]:
+        """All recorded recall counts as {path: count} (diagnostics/tests)."""
+        conn = self._connect()
+        rows = conn.execute("SELECT path, recall_count FROM note_meta").fetchall()
+        return {r["path"]: r["recall_count"] for r in rows}
 
     def stats(self) -> Dict[str, int]:
         conn = self._connect()

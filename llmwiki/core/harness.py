@@ -90,6 +90,7 @@ class ContextMemoryHarness:
             self.vault_path,
             daily_dir=self.config["vault"]["schema"].get("daily", "chronicle/daily/"),
             graph=self.graph,
+            strength_weight=self.config["retrieve"].get("strength_weight", 0.5),
         )
         self.assembler = ContextAssembler(
             token_budget=self.config["context"]["token_budget"],
@@ -166,6 +167,13 @@ class ContextMemoryHarness:
         if not results:
             return ""
 
+        # Memory-strength bookkeeping: these notes were actually recalled
+        # into context, so their forgetting curve restarts (see LinkGraph).
+        try:
+            self.graph.record_recall([r["path"] for r in results])
+        except Exception as e:
+            logger.debug("record_recall failed (non-fatal): %s", e)
+
         # Assemble with token budget
         assembler = ContextAssembler(
             token_budget=budget,
@@ -196,12 +204,20 @@ class ContextMemoryHarness:
             "strategies", self.config["retrieve"].get("strategies", ["keyword"])
         )
 
-        return self.retriever.retrieve(
+        results = self.retriever.retrieve(
             query=query,
             top_k=top_k,
             strategies=strategies,
             fusion=self.config["retrieve"].get("fusion", "rrf"),
         )
+
+        if results:
+            try:
+                self.graph.record_recall([r["path"] for r in results])
+            except Exception as e:
+                logger.debug("record_recall failed (non-fatal): %s", e)
+
+        return results
 
     # ------------------------------------------------------------------
     # Vault operations

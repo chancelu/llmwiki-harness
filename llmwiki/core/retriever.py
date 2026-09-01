@@ -16,30 +16,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from llmwiki.core.indexer import IndexRegistry
+from llmwiki.search.base import query_tokens as _query_tokens
 
 if TYPE_CHECKING:
     from llmwiki.core.graph import LinkGraph
 
 logger = logging.getLogger(__name__)
-
-_CJK_RE = re.compile(r"[一-鿿぀-ヿ가-힯]")
-
-
-def _query_tokens(query: str) -> List[str]:
-    """Split a natural-language query into matchable tokens.
-
-    Whitespace/punctuation-separated words are used as-is. CJK runs longer
-    than 2 characters are split into overlapping bigrams — CJK text has no
-    word boundaries, and bigrams give reliable partial matching without a
-    segmenter (e.g. "知识图谱怎么用" → 知识 / 识图 / 图谱 / 谱怎 / 怎么 / 么用).
-    """
-    tokens: List[str] = []
-    for tok in re.findall(r"\w+", query.lower()):
-        if len(tok) > 2 and _CJK_RE.search(tok):
-            tokens.extend(tok[i : i + 2] for i in range(len(tok) - 1))
-        else:
-            tokens.append(tok)
-    return tokens
 
 
 def rrf_fusion(results_lists: List[List[Dict]], k: int = 60) -> List[Dict]:
@@ -71,11 +53,15 @@ class Retriever:
         vault_path: Path,
         daily_dir: str = "chronicle/daily/",
         graph: Optional["LinkGraph"] = None,
+        strength_weight: float = 0.5,
     ):
         self.registry = registry
         self.vault_path = Path(vault_path)
         self._daily_dir = daily_dir
         self.graph = graph
+        # How much recalled-before notes get boosted: score *= (1 + w * strength).
+        # Notes with no recall history are never penalized. 0 disables boosting.
+        self.strength_weight = strength_weight
 
     def _get_graph(self) -> "LinkGraph":
         """Lazily create the link graph if none was injected."""
@@ -103,18 +89,21 @@ class Retriever:
             days_back: For temporal strategy, how many days of chronicle to include.
 
         Returns:
-            List of result dicts with path, title, snippet, score.
+            List of result dicts with path, title, snippet, score, plus:
+              - "via": which strategies surfaced this note (e.g. ["keyword", "graph"])
+              - "strength": memory strength in (0, 1], or None if never recalled
         """
         if strategies is None:
             strategies = ["keyword"]
 
-        results_by_strategy: List[List[Dict]] = []
+        # (strategy_name, results) pairs — names feed the "via" explanation.
+        results_by_strategy: List[tuple] = []
 
         if "keyword" in strategies:
             try:
                 keyword_results = self._keyword_search(query, top_k * 2)
                 if keyword_results:
-                    results_by_strategy.append(keyword_results)
+                    results_by_strategy.append(("keyword", keyword_results))
             except Exception as e:
                 logger.warning("Keyword search failed: %s", e)
 
@@ -122,7 +111,7 @@ class Retriever:
             try:
                 graph_results = self._graph_search(query, top_k)
                 if graph_results:
-                    results_by_strategy.append(graph_results)
+                    results_by_strategy.append(("graph", graph_results))
             except Exception as e:
                 logger.warning("Graph search failed: %s", e)
 
@@ -130,27 +119,63 @@ class Retriever:
             try:
                 temporal_results = self._temporal_search(query, days_back, top_k)
                 if temporal_results:
-                    results_by_strategy.append(temporal_results)
+                    results_by_strategy.append(("temporal", temporal_results))
             except Exception as e:
                 logger.warning("Temporal search failed: %s", e)
 
         if not results_by_strategy:
             return []
 
+        # Which strategies surfaced each path (recall explainability).
+        via: Dict[str, List[str]] = {}
+        for name, results in results_by_strategy:
+            for r in results:
+                via.setdefault(r["path"], []).append(name)
+
         if len(results_by_strategy) == 1 or fusion == "concat":
             # Simple concatenation and dedup
             seen = set()
             merged = []
-            for results in results_by_strategy:
+            for _name, results in results_by_strategy:
                 for r in results:
                     if r["path"] not in seen:
                         seen.add(r["path"])
                         merged.append(r)
-            return merged[:top_k]
+        else:
+            # RRF fusion
+            merged = rrf_fusion([results for _name, results in results_by_strategy])
 
-        # RRF fusion
-        fused = rrf_fusion(results_by_strategy)
-        return fused[:top_k]
+        return self._finalize(merged, via, top_k)
+
+    def _finalize(self, results: List[Dict], via: Dict[str, List[str]], top_k: int) -> List[Dict]:
+        """Annotate results with explainability fields and re-rank by memory strength.
+
+        Every result gets "via" (which strategies surfaced it) and "strength"
+        (decayed recall strength, None when never recalled). When
+        strength_weight > 0, scores are multiplied by (1 + w * strength) and
+        the list is re-sorted — so a note the agent actually used before
+        outranks an equally relevant one it never touched, and memories that
+        haven't been recalled in a long time fade back down.
+        """
+        strengths: Dict[str, Optional[float]] = {}
+        try:
+            strengths = self._get_graph().strengths([r["path"] for r in results])
+        except Exception as e:
+            logger.debug("Strength lookup failed (neutral): %s", e)
+
+        boosted = False
+        for r in results:
+            r["via"] = via.get(r["path"], [])
+            s = strengths.get(r["path"])
+            r["strength"] = round(s, 4) if s is not None else None
+            if s is not None and self.strength_weight > 0:
+                r["score"] = r.get("score", 0.0) * (1.0 + self.strength_weight * s)
+                boosted = True
+
+        if boosted:
+            results.sort(key=lambda r: r.get("score", 0.0), reverse=True)
+
+        return results[:top_k]
 
     def _keyword_search(self, query: str, top_k: int) -> List[Dict]:
         """Standard keyword search via the index registry."""

@@ -6,6 +6,7 @@ Supports both YAML and JSON formats.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 from pathlib import Path
@@ -38,6 +39,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "fusion_method": "rrf",  # reciprocal rank fusion
         "rerank": False,
         "context_lines": 3,
+        # Memory-strength boost: score *= (1 + weight * strength) for notes
+        # recalled before (forgetting curve). 0 disables; never-recalled notes
+        # are always neutral.
+        "strength_weight": 0.5,
     },
     "context": {
         "token_budget": 4000,
@@ -76,7 +81,7 @@ def load_config(
     Returns:
         Merged configuration dictionary.
     """
-    config = dict(DEFAULT_CONFIG)
+    config = copy.deepcopy(DEFAULT_CONFIG)
 
     # 1. Load from config file
     file_config = _load_config_file(path)
