@@ -17,3 +17,6 @@ venv/
 chronicle/daily/archive/
 raw/
 
+
+# Benchmark data
+bench/.bench_data/
