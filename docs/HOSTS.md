@@ -23,6 +23,7 @@ Legend:
 
 | Host | Transport | Sampling curation (`memory_curate` via host LLM) | Status |
 |---|---|---|---|
+| Kimi Work (desktop) | stdio (uvx) | not yet exercised | **verified** 2026-09-01 — real mount, full handshake + capture/search round-trip |
 | Claude Desktop | stdio | supported | manual |
 | Cursor | stdio / http | not supported → falls back to endpoint/regex | manual |
 | Kimi CLI / Kimi Code | stdio / http | supported | manual |
@@ -63,19 +64,28 @@ Same shape as above. Cursor also supports remote servers:
 
 with the server running as `llmwiki mcp --transport http --port 8000`.
 
-### Kimi CLI (`~/.kimi/mcp.json`)
+### Kimi Work / Kimi CLI
+
+Kimi Work desktop reads `mcp.json` from its runtime home
+(`daimon/runtime/kimi-code/home/mcp.json` under the app's shared-data
+directory); Kimi CLI reads `~/.kimi/mcp.json`. Both take the standard shape:
 
 ```json
 {
   "mcpServers": {
     "llmwiki": {
-      "command": "uvx",
-      "args": ["--from", "llmwiki-harness[mcp]", "llmwiki-mcp"],
-      "env": { "LLMWIKI_VAULT_PATH": "~/Documents/selfwiki" }
+      "command": "uv",
+      "args": ["tool", "run", "--python", "3.12", "--from",
+               "llmwiki-harness[mcp]", "llmwiki-mcp"],
+      "env": { "LLMWIKI_VAULT_PATH": "/absolute/path/to/selfwiki" }
     }
   }
 }
 ```
+
+Notes: use an absolute `uv` path if the host's PATH doesn't include it, and
+pin `--python 3.12` on systems whose default Python is < 3.10. Restart the
+host (or start a new session) after editing `mcp.json`.
 
 ### Generic agent (no MCP)
 
